@@ -53,15 +53,45 @@ type: custom:mg-school-card
 
 ## Konfiguration Auto-Karte
 
-Alle Sensor-IDs am Anfang der Datei `mg-car-dashboard.js` unter `CAR_DEFAULTS` anpassen.
+Alle Sensoren, Pfade und Optionen stehen am Anfang von `mg-car-dashboard.js` im Block `CAR_DEFAULTS`.
+Jeder Wert lässt sich dort ändern oder per YAML überschreiben (gleiche Struktur):
 
-```javascript
-const CAR_DEFAULTS = {
-  soc:   "sensor.e_c3_batterie",   // Ladestand (%)
-  range: "sensor.e_c3_reichweite", // Reichweite (km)
-  // ...
-};
+```yaml
+type: custom:mg-car-dashboard
+car:
+  image: /local/mein_auto.png
+  soc: sensor.mein_auto_batterie
+  history_ranges:
+    - { hours: 6, label: "6 h" }
+    - { hours: 24, label: "Tag" }
+    - { hours: 168, label: "Woche" }
+    - { hours: 720, label: "Monat" }
+    - { hours: 2160, label: "Quartal" }
 ```
+
+| Option | Bedeutung |
+|--------|-----------|
+| `fit_screen` | Seite an die Fensterhöhe anpassen (Desktop) |
+| `debug` | Diagnose-Meldungen in der Browser-Konsole |
+| `energy.car_power` / `grid_import` / `home` | Ladeleistung, Netzbezug, Hausverbrauch für den Verlauf (Aufteilung Netz/PV) |
+| `car.name`, `car.image` | Name und Bild des Autos |
+| `car.soc`, `range`, `status`, `cable` | Ladestand, Reichweite, Fahrstatus, Ladekabel |
+| `car.status_on` / `status_off` | Text für fahrend / geparkt |
+| `car.limit`, `mode`, `always`, `manual_mode` | Ladestrom, evcc-Lademodus, „Immer laden“, eigene Vorgabe |
+| `car.evcc.*` | evcc-Sensoren (Leistung, Sitzung, Ladeziel, Mindestladung …) |
+| `car.evcc_vehicle` | nur Ladungen dieses evcc-Fahrzeugs in „Alle Ladungen“ |
+| `car.ev_assistant` | einzelne ev_assistant-Entitäten fest vorgeben (sonst automatisch gefunden) |
+| `car.ev_assistant_entry` | config_entry_id von ev_assistant (sonst automatisch) |
+| `car.stats` | Kennzahlen in der Auto-Kachel (ev_assistant-Schlüssel oder Entity-IDs) |
+| `car.trips` | Fahrtenbuch-Sensor (Attribut `trips`) |
+| `car.trips_visible` | Fahrten in der Kachel, wenn die Seite nicht an die Fensterhöhe angepasst ist (sonst so viele, wie hineinpassen) |
+| `car.trips_max` | Fahrten im Fenster „Alle Fahrten“ |
+| `car.history_ranges` | Zeiträume im Verlauf: Stunden oder `{ hours, label }` |
+| `car.history_hours` | Zeitraum beim ersten Öffnen |
+| `car.bars_from_hours` | ab diesem Zeitraum Balken statt Linie |
+| `car.split_grid` / `split_home` | abweichende Sensoren für die Aufteilung Netz/PV |
+| `car.session_days` / `session_stats_days` | Suchzeitraum für „Letzte Ladung“ (Verlauf / Langzeitstatistik) |
+| `car.mode_styles`, `always_styles`, `manual_styles` | Beschriftung, Symbol und Farbe der Auswahlwerte |
 
 ## Versionen
 
