@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=5  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=6  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "2.37.5";
+const VERSION = "3.0.0";
 const FONT_URL = "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap";
 
 const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
@@ -14,39 +14,42 @@ const WD_LONG = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Fre
 const MON = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 const MON_LONG = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
-const DEFAULT_CONFIG = {
+/* =====================================================================
+ *  EINSTELLUNGEN – hier alle Sensoren, Pfade und Optionen anpassen.
+ *  Jeder Wert kann zusätzlich per YAML überschrieben werden, z. B.
+ *    type: custom:mg-car-dashboard
+ *    car:
+ *      soc: sensor.mein_auto_batterie
+ *      image: /local/mein_auto.png
+ * ===================================================================== */
+const CAR_DEFAULTS = {
   fit_screen: true,   // Desktop/Laptop: Dashboard passt sich der Fensterhöhe an (kein Scrollen der Seite)
+  debug: false,       // true = Diagnose-Meldungen in der Browser-Konsole
+
+  // --- Energie (für Ladeleistung und Aufteilung Netz/PV im Verlauf) ---
   energy: {
     car_power: "sensor.shelly_wallbox_power",                       // Ladeleistung, falls car.evcc.power fehlt
-    grid_import: "sensor.alpha_ess_netzbezug_leistung_vom_netz",     // für die Aufteilung Netz/PV im Verlauf
-    home: "sensor.strom_leistung_haus_gesamt_inkl_bkw_und_marstek",  // Hausverbrauch inkl. Auto (Aufteilung Netz/PV)
+    grid_import: "sensor.alpha_ess_netzbezug_leistung_vom_netz",     // Netzbezug (Leistung)
+    home: "sensor.strom_leistung_haus_gesamt_inkl_bkw_und_marstek",  // Hausverbrauch inkl. Auto (Leistung)
   },
+
   car: {
+    // --- Fahrzeug ---
     name: "Citroën ë-C3",
-    soc: "sensor.e_c3_batterie",
-    range: "sensor.e_c3_reichweite",
-    status: "binary_sensor.e_c3_motor",
-    status_on: "Motor an",          // Text bei status = on
-    status_off: "Geparkt",          // Text bei status = off
-    cable: "binary_sensor.warp3_2ee3_cable",   // on = eingesteckt, off = abgesteckt
-    limit: "number.wallbox_ladestrom",
-    mode: "select.evcc_warp3_mode",                 // EVCC-Lademodus: Aus / Smart / Schnell
+    image: "/local/auto.png",                       // Bild des Autos (leer = kein Bild)
+    soc: "sensor.e_c3_batterie",                    // Ladestand in %
+    range: "sensor.e_c3_reichweite",                // Reichweite in km
+    status: "binary_sensor.e_c3_motor",             // on = fährt
+    status_on: "Motor an",                          // Text bei status = on
+    status_off: "Geparkt",                          // Text bei status = off
+    cable: "binary_sensor.warp3_2ee3_cable",        // on = eingesteckt, off = abgesteckt
+
+    // --- Wallbox / Lademodus ---
+    limit: "number.wallbox_ladestrom",              // Ladestrom (A)
+    mode: "select.evcc_warp3_mode",                 // evcc-Lademodus: Aus / Smart / Schnell
     always: "select.evcc_warp3_always_charge",      // nur bei Smart: Aus / Ein / Einmalig
-    // Zuordnung der Select-Werte (Groß-/Kleinschreibung egal, mehrere Schreibweisen möglich)
-    mode_styles: {
-      "aus|off":           { label: "Aus",     icon: "mdi:power-off",      color: "#8b91a1" },
-      "smart|pv|minpv":    { label: "Smart",   icon: "mdi:solar-power",    color: "#34d399" },
-      "schnell|fast|now":  { label: "Schnell", icon: "mdi:lightning-bolt", color: "#fb923c" },
-    },
-    always_when: "smart|pv|minpv",                  // bei diesen Modi erscheint "Immer laden"
-    always_label: "Immer laden",
-    always_icon_only: true,                         // Chip zeigt nur das Symbol
-    always_styles: {
-      "aus|off|false":     { label: "Aus",      icon: "mdi:close",    color: "#8b91a1" },
-      "ein|on|true":       { label: "Immer",    icon: "mdi:infinity", color: "#38bdf8" },
-      "einmalig|once":     { label: "Einmalig", glyph: "1×",          color: "#a78bfa" },
-    },
-    image: "/local/auto.png",
+    manual_mode: "input_select.evcc_lademodus_manuell",   // eigene Vorgabe (automatisch / manuell), leer lassen wenn nicht vorhanden
+
     // --- evcc (Ladepunkt) ---
     evcc: {
       charging: "binary_sensor.evcc_warp3_charging",
@@ -58,23 +61,64 @@ const DEFAULT_CONFIG = {
       remaining: "sensor.evcc_warp3_charge_remaining_duration",
       duration: "sensor.evcc_warp3_charge_duration",
       finish: "sensor.e_c3_batterie_ladezeit_ende",
-      limit_soc: "select.evcc_warp3_limit_soc",
-      ev_assistant_weekly: "",       // input_boolean der wöchentlichen Vollladung aus ev_assistant (leer = Service direkt)                              // z. B. number.evcc_warp3_limit_soc (Ladeziel, Markierung im Balken)
-      min_soc: "input_number.evcc_auto_soc_schwelle_minpv",   // Markierung „bis hier immer laden“
+      limit_soc: "select.evcc_warp3_limit_soc",                 // Ladeziel (Auswahl + Markierung im Balken)
+      min_soc: "input_number.evcc_auto_soc_schwelle_minpv",     // Markierung „bis hier immer laden“
       solar_total: "sensor.evcc_stat_total_solar_percentage",
       last_charge: "sensor.e_c3_letzte_ladung",
     },
-    // --- ev_assistant: "auto" sucht die Entitäten selbst (Integration ev_assistant), sonst { schluessel: entity_id } ---
-    ev_assistant: "auto",
-    stats: ["vehicle_avg_consumption", "odo", "cost_year", "savings"],   // Kennzahlen auf der Auto-Seite (oben)
-    manual_mode: "input_select.evcc_lademodus_manuell",   // eigene Vorgabe (automatisch / manuell), leer lassen wenn nicht vorhanden
-    trips: "sensor.e_c3_fahrtenbuch_2",   // Fahrtenbuch (Attribut "trips")
-    trips_max: 25,
-    history_hours: 24,                 // Verlauf: Zeitraum bis jetzt (Stunden), per Knopf umschaltbar
-    history_ranges: [6, 24, 72, 168, 720],   // Auswahl im Verlauf (Stunden)
+    evcc_vehicle: "",                // nur Ladungen dieses evcc-Fahrzeugs in „Alle Ladungen“ (leer = alle)
+
+    // --- ev_assistant ---
+    // Die Entitäten werden automatisch gefunden. Einzelne lassen sich hier fest vorgeben, z. B.
+    //   ev_assistant: { odo: "sensor.mein_km_stand", cost_year: "sensor.kosten_jahr" },
+    // Verwendete Schlüssel: odo, odo_day_km, odo_week_km, odo_month_km, odo_year_km, odo_avg_day, odo_year_projected,
+    //   trip_count, last_trip_km, vehicle_avg_consumption, trip_avg_consumption, range_estimate, available_kwh,
+    //   battery_capacity, equivalent_full_cycles, measured_efficiency, cost_day, cost_week, cost_month, cost_year,
+    //   kwh_month, kwh_year, home_kwh, total_kwh, savings, co2_savings, pending, trip_pending, wartung_faellig,
+    //   evcc_charge_plan, evcc_mode_control, charge_before_pv_recommended
+    ev_assistant: {},
+    ev_assistant_entry: "",          // config_entry_id von ev_assistant (leer = automatisch suchen)
+    stats: ["vehicle_avg_consumption", "odo", "cost_year", "savings"],   // Kennzahlen in der Auto-Kachel
+
+    // --- Fahrtenbuch ---
+    trips: "sensor.e_c3_fahrtenbuch_2",   // Sensor mit Attribut "trips"
+    trips_visible: 5,                     // so viele Fahrten in der Kachel, wenn die Seite nicht an die Fensterhöhe angepasst ist
+    trips_max: 100,                       // so viele Fahrten im Fenster „Alle Fahrten“
+
+    // --- Verlauf: 5 Zeiträume zum Umschalten (Stunden, optional mit eigener Beschriftung) ---
+    history_ranges: [
+      { hours: 6,   label: "6 h" },
+      { hours: 24,  label: "24 h" },
+      { hours: 72,  label: "3 T" },
+      { hours: 168, label: "7 T" },
+      { hours: 720, label: "30 T" },
+    ],
+    history_hours: 24,                 // Zeitraum beim ersten Öffnen (einer der Werte oben)
     bars_from_hours: 24,               // ab diesem Zeitraum: geladene kWh als Balken (Netz/PV), bis 7 T stündlich, darüber täglich
-    split_grid: null,                  // Netzbezug (Leistung) für die Aufteilung, Standard: energy.grid_import
-    split_home: null,                  // Hausverbrauch inkl. Auto (Leistung), Standard: energy.home
+    split_grid: null,                  // Netzbezug für die Aufteilung, Standard: energy.grid_import
+    split_home: null,                  // Hausverbrauch inkl. Auto, Standard: energy.home
+    session_days: 30,                  // „Letzte Ladung“: so viele Tage im Verlauf suchen
+    session_stats_days: 120,           // … und so viele Tage in der Langzeitstatistik
+
+    // --- Darstellung der Auswahlwerte (Groß-/Kleinschreibung egal, mehrere Schreibweisen mit |) ---
+    mode_styles: {
+      "aus|off":           { label: "Aus",     icon: "mdi:power-off",      color: "#8b91a1" },
+      "smart|pv|minpv":    { label: "Smart",   icon: "mdi:solar-power",    color: "#34d399" },
+      "schnell|fast|now":  { label: "Schnell", icon: "mdi:lightning-bolt", color: "#fb923c" },
+    },
+    always_when: "smart|pv|minpv",     // bei diesen Modi gibt es „Immer laden“ in der Smart-Kachel
+    always_styles: {
+      "aus|off|false":     { label: "Aus",      icon: "mdi:close",    color: "#8b91a1" },
+      "ein|on|true":       { label: "Immer",    icon: "mdi:infinity", color: "#38bdf8" },
+      "einmalig|once":     { label: "Einmalig", glyph: "1×",          color: "#a78bfa" },
+    },
+    manual_styles: {
+      "automatisch|auto":        { label: "Auto",    icon: "mdi:robot-outline",      color: "#38bdf8" },
+      "aus|off":                 { label: "Aus",     icon: "mdi:power-off",          color: "#8b91a1" },
+      "pv":                      { label: "PV",      icon: "mdi:solar-power",        color: "#34d399" },
+      "min + pv|min+pv|minpv":   { label: "Min+PV",  icon: "mdi:transmission-tower", color: "#f7b733" },
+      "schnell|now|fast":        { label: "Schnell", icon: "mdi:lightning-bolt",     color: "#fb923c" },
+    },
   },
 };
 
@@ -96,7 +140,7 @@ class MgCarDashboard extends HTMLElement {
   static getStubConfig() { return {}; }
 
   setConfig(config) {
-    this._config = merge(DEFAULT_CONFIG, config || {});
+    this._config = merge(CAR_DEFAULTS, config || {});
     if (this._built) { this._built = false; this._build(); if (this._hass) this._update(true); }
   }
 
@@ -110,7 +154,7 @@ class MgCarDashboard extends HTMLElement {
   }
   connectedCallback() {
     if (!this._onResize) {
-      this._onResize = () => { cancelAnimationFrame(this._fitRaf); this._fitRaf = requestAnimationFrame(() => this._fit()); };
+      this._onResize = () => { cancelAnimationFrame(this._fitRaf); this._fitRaf = requestAnimationFrame(() => { this._fit(); this._render_trips(); }); };
       this._ro = new ResizeObserver(this._onResize);
     }
     window.addEventListener("resize", this._onResize);
@@ -144,7 +188,7 @@ class MgCarDashboard extends HTMLElement {
         </div>
       </div><dialog class="dlg" id="cardlg"></dialog>`;
     this._built = true;
-    requestAnimationFrame(() => this._fit());
+    requestAnimationFrame(() => { this._fit(); this._render_trips(); });
   }
 
   _update(force = false) {
@@ -179,7 +223,7 @@ class MgCarDashboard extends HTMLElement {
       if (end == null) {   // im Verlauf (Recorder, meist 10 Tage) nichts → Langzeitstatistik (Stundenmaxima) durchsuchen
         const st = await this._statsLastSession(ids);
         this._lastSess = st || { none: true, days: Math.round((Date.now() - new Date(start).getTime()) / 86400000) };
-        console.info("mg-car-dashboard: letzte Ladung", this._lastSess);
+        this._log("letzte Ladung", this._lastSess);
         return this._update(true);
       }
       const vals = {};
@@ -190,7 +234,7 @@ class MgCarDashboard extends HTMLElement {
       }
       this._lastSess = { end, vals, src: "history" };
     } catch (e) { this._lastSess = { err: true }; }
-    console.info("mg-car-dashboard: letzte Ladung", this._lastSess);
+    this._log("letzte Ladung", this._lastSess);
     this._update(true);
   }
 
@@ -262,18 +306,14 @@ class MgCarDashboard extends HTMLElement {
   }
 
   _openCharges() {
-    const d = this.shadowRoot.getElementById("cardlg");
-    this._chOpen = true;
-    d.dataset.mode = "charges";
-    if (!d._bound) { d._bound = true; d.addEventListener("click", (ev) => { if (ev.target === d) d.close(); }); d.addEventListener("close", () => { this._chOpen = false; }); }
+    this._openDlg("charges");
     this._renderCharges();
-    try { d.showModal(); } catch (x) { d.setAttribute("open", ""); }
     this._loadCharges();
   }
 
   _renderCharges() {
     const d = this.shadowRoot.getElementById("cardlg");
-    if (!d || !this._chOpen) return;
+    if (!d || this._dlg !== "charges") return;
     const C = this._charges, f = this._chFilter || "all";
     const all = C?.list || [], list = all.filter((x) => f === "all" || x.type === f);
     const sum = (arr, k) => arr.reduce((a, x) => a + (x[k] || 0), 0);
@@ -333,9 +373,6 @@ class MgCarDashboard extends HTMLElement {
 
     // Vorgabe (eigener Helfer)
     const manual = this._st(c.manual_mode), auto = manual && /^auto/i.test(manual.state);
-    const MSTY = { "automatisch|auto": { label: "Auto", icon: "mdi:robot-outline", color: "#38bdf8" }, "aus|off": { label: "Aus", icon: "mdi:power-off", color: "#8b91a1" },
-      "pv": { label: "PV", icon: "mdi:solar-power", color: "#34d399" }, "min + pv|min+pv|minpv": { label: "Min+PV", icon: "mdi:transmission-tower", color: "#f7b733" },
-      "schnell|now|fast": { label: "Schnell", icon: "mdi:lightning-bolt", color: "#fb923c" } };
 
     // evcc-Modus als Kacheln, „Immer laden“ als Auswahl in der Smart-Kachel
     const mst = this._st(c.mode), ast = this._st(c.always);
@@ -347,7 +384,7 @@ class MgCarDashboard extends HTMLElement {
       // Vorgabe-Dropdown (manual_mode) – zeigt aktuellen Wert, rot wenn nicht Auto
       if (manual) {
         const curV = manual.state, isAuto = /^auto/i.test(curV);
-        const vm = this._styleFor(MSTY, curV);
+        const vm = this._styleFor(c.manual_styles, curV);
         tiles.push(`<button class="mmode vorgabe ${isAuto ? "" : "manual"}" style="--cc:${isAuto ? "#38bdf8" : "#ef4444"}" data-act="vorgabemenu">
           <span class="mmh">${icon(vm.icon || "mdi:cog")}<b>${esc(this._label(vm, curV))}</b>${icon("mdi:chevron-down", "mchv")}</span></button>`);
       }
@@ -414,12 +451,13 @@ class MgCarDashboard extends HTMLElement {
     let limBtn = "";
     if (ev.limit_soc) {
       const limSt = this._st(ev.limit_soc);
-      if (!limSt) console.warn("mg-car: limit_soc", ev.limit_soc, "nicht in hass.states gefunden");
+      if (!limSt) this._log("limit_soc", ev.limit_soc, "nicht in hass.states gefunden");
       const v = limSt?.state;
       limBtn = `<button class="mbtn lim" data-act="limmenu" data-entity="${esc(ev.limit_soc)}">
         ${icon("mdi:battery-check-outline")}<div class="mtx"><b>${v != null && !OFFLINE_HD.includes(v) ? esc(String(v).replace(/ ?%$/, "")) + " %" : "–"}</b><span>Ladeziel</span></div>${icon("mdi:chevron-down", "mchv")}</button>`;
     }
     // Vollladung als Knopf
+    if (this._balOptimistic != null && !!ma.balancing_enabled === this._balOptimistic) this._balOptimistic = null;   // bestätigt
     const balOptimistic = this._balOptimistic;
     const balOn = balOptimistic != null ? balOptimistic : !!ma.balancing_enabled;
     const balAkt = !!ma.balancing_aktiv, balF = !!ma.balancing_faellig;
@@ -437,12 +475,10 @@ class MgCarDashboard extends HTMLElement {
   _openLimMenu(anchor) {
     this._closeMenu();
     const id = anchor.dataset.entity, st = this._st(id);
-    console.info("mg-car: limmenu", id, st?.state, st?.attributes?.options?.slice(0,3));
     if (!st) return;
     const a = st.attributes, cur = st.state;
     const opts = a.options || [];
     const menu = document.createElement("div"); menu.className = "menu limm";
-    if (!st) { console.warn("mg-car: Ladeziel-Entity nicht gefunden:", id); this._closeMenu(); return; }
     if (opts.length) {
       menu.innerHTML = opts.map((v) => `<button class="mg-menu-item mi ${String(v) === String(cur) ? "cur" : ""}" data-act="limset" data-entity="${esc(id)}" data-v="${esc(v)}"><span>${esc(v)}</span>${String(v) === String(cur) ? icon("mdi:check", "ck") : ""}</button>`).join("");
     } else {
@@ -457,7 +493,7 @@ class MgCarDashboard extends HTMLElement {
   _evaCall(service, data) {
     const id = this._evaEntryId();
     if (!id) { console.warn("mg-car: ev_assistant config_entry_id nicht gefunden. Trage car.ev_assistant_entry ein."); return; }
-    console.info("mg-car: ev_assistant →", service, { config_entry_id: id, ...data });
+    this._log("ev_assistant →", service, { config_entry_id: id, ...data });
     this._hass.callService("ev_assistant", service, { config_entry_id: id, ...data });
   }
 
@@ -558,16 +594,20 @@ class MgCarDashboard extends HTMLElement {
   }
 
   /* --- Fahrtenbuch --- */
-  _render_trips() {
-    const c = this._config.car, st = this._st(c.trips), el = this.shadowRoot.getElementById("trips");
-    let trips = st?.attributes?.trips || [];
+  _tripList() {
+    const c = this._config.car;
+    let trips = this._st(c.trips)?.attributes?.trips || [];
     if (!Array.isArray(trips)) trips = [];
+    const t0 = (x) => new Date(x.start).getTime() || 0;
+    return trips.slice().sort((a, b) => t0(b) - t0(a)).slice(0, c.trips_max || 100);
+  }
+
+  _tripRows(list) {
     const dt = (v) => { const d = new Date(v); return isNaN(d) ? null : d; };
     const place = (x) => ({ home: "Zuhause", zuhause: "Zuhause", Home: "Zuhause", not_home: "unterwegs", "außerhalb": "unterwegs" }[x] || x || "?");
-    const list = trips.slice().sort((a, b) => (dt(b.start)?.getTime() || 0) - (dt(a.start)?.getTime() || 0)).slice(0, c.trips_max || 25);
     let lastDay = "";
-    const rows = list.map((t) => {
-      const s = dt(t.start), day = s ? `${WD[s.getDay()]}, ${s.getDate()}. ${MON[s.getMonth()]}` : "";
+    return list.map((t) => {
+      const s = dt(t.start), day = s ? `${WD[s.getDay()]}, ${s.getDate()}. ${MON[s.getMonth()]}${s.getFullYear() !== new Date().getFullYear() ? ` ${s.getFullYear()}` : ""}` : "";
       const head = day !== lastDay ? `<div class="tday">${esc(day)}</div>` : ""; lastDay = day;
       const km = parseFloat(t.strecke), kwh = parseFloat(t.verbrauch_kwh), avg = parseFloat(t.avg_verbrauch);
       return `${head}<div class="trip">
@@ -577,16 +617,95 @@ class MgCarDashboard extends HTMLElement {
         <span class="tkwh"><b>${isNaN(kwh) ? "–" : de(kwh, 1)}</b><small>kWh${!isNaN(avg) ? ` · ${de(avg, 1)}/100` : ""}</small></span>
       </div>`;
     }).join("");
-    const sumKm = list.reduce((a, t) => a + (parseFloat(t.strecke) || 0), 0);
-    el.innerHTML = this._hd("Fahrtenbuch", list.length ? `${list.length} Fahrten · ${de(sumKm, 0)} km` : "", c.trips) +
-      (rows ? `<div class="tlist">${rows}</div>` : `<div class="empty">Keine Fahrten gefunden${c.trips ? ` (${esc(c.trips)})` : ""}</div>`);
   }
 
+  _render_trips() {
+    const c = this._config.car, el = this.shadowRoot?.getElementById("trips");
+    if (!el || !this._hass) return;
+    const all = this._tripList();
+    const fit = this.shadowRoot.querySelector(".wrap")?.classList.contains("fit");
+    // passt sich die Seite der Fensterhöhe an, kürzt _clipTrips() die Liste auf das, was in die Kachel passt
+    const list = fit ? all : all.slice(0, c.trips_visible || 5);
+    this._tripsAll = all.length;
+    el.innerHTML = `<div class="hd"><span class="ttl">Fahrtenbuch</span><span class="lbl"></span>
+        <button class="arrow" data-act="trips" aria-label="Alle Fahrten" title="Alle Fahrten">${icon("mdi:chevron-right")}</button></div>` +
+      (list.length ? `<div class="tlist" data-act="trips" title="Alle Fahrten anzeigen">${this._tripRows(list)}</div>`
+        : `<div class="empty">Keine Fahrten gefunden${c.trips ? ` (${esc(c.trips)})` : ""}</div>`);
+    this._clipTrips();
+    if (this._dlg === "trips") this._renderTripsDlg();
+  }
+
+  /* Fahrten ausblenden, die nicht mehr in die Kachel passen, und die Anzahl in die Kopfzeile schreiben */
+  _clipTrips() {
+    const el = this.shadowRoot?.getElementById("trips"), box = el?.querySelector(".tlist");
+    const lbl = el?.querySelector(".hd .lbl");
+    if (!lbl) return;
+    let shown = box ? box.querySelectorAll(".trip").length : 0;
+    if (box && this.shadowRoot.querySelector(".wrap")?.classList.contains("fit")) {
+      const kids = [...box.children];
+      kids.forEach((k) => (k.style.display = ""));
+      const h = box.clientHeight;
+      let cut = false;
+      for (const k of kids) if (cut || k.offsetTop + k.offsetHeight > h + 1) { cut = true; k.style.display = "none"; }
+      const vis = kids.filter((k) => k.style.display !== "none");
+      while (vis.length && vis[vis.length - 1].classList.contains("tday")) vis.pop().style.display = "none";   // Tagesüberschrift ohne Fahrt
+      if (!vis.some((k) => k.classList.contains("trip")) && kids.length) { kids[0].style.display = ""; kids[1] && (kids[1].style.display = ""); }   // mindestens eine Fahrt
+      shown = kids.filter((k) => k.classList.contains("trip") && k.style.display !== "none").length;
+    }
+    const n = this._tripsAll || 0;
+    lbl.textContent = !n ? "" : shown < n ? `${shown} von ${n} Fahrten` : `${n} Fahrten`;
+  }
+
+  _openTrips() { this._openDlg("trips"); this._renderTripsDlg(); }
+
+  _renderTripsDlg() {
+    const d = this.shadowRoot.getElementById("cardlg");
+    if (!d || this._dlg !== "trips") return;
+    const list = this._tripList(), num = (t, k) => parseFloat(t[k]) || 0;
+    const km = list.reduce((a, t) => a + num(t, "strecke"), 0), kwh = list.reduce((a, t) => a + num(t, "verbrauch_kwh"), 0);
+    const min = list.reduce((a, t) => a + num(t, "dauer"), 0);
+    const sc = d.querySelector(".dbody")?.scrollTop || 0;
+    d.innerHTML = `<div class="dpan chpan">
+      <div class="dhd"><span class="dico">${icon("mdi:map-marker-path")}</span>
+        <span class="rtx"><span class="rname">Alle Fahrten</span><span class="rsub">${esc(this._st(this._config.car.trips)?.attributes?.friendly_name || "Fahrtenbuch")}</span></span>
+        <button class="dx" data-act="cardclose" aria-label="Schließen">${icon("mdi:close")}</button></div>
+      <div class="chsum">
+        <div><span>Fahrten</span><b>${list.length}</b></div>
+        <div><span>Strecke</span><b>${de(km, 0)}<small>km</small></b></div>
+        <div><span>Energie</span><b>${de(kwh, kwh >= 100 ? 0 : 1)}<small>kWh</small></b></div>
+        <div><span>Ø Verbrauch</span><b>${km > 1 ? de(kwh / km * 100, 1) : "–"}<small>kWh/100</small></b></div>
+        <div><span>Fahrzeit</span><b>${min >= 60 ? `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}` : Math.round(min)}<small>${min >= 60 ? "h" : "min"}</small></b></div>
+      </div>
+      <div class="dbody">${list.length ? `<div class="tlist">${this._tripRows(list)}</div>` : `<div class="empty">Keine Fahrten gefunden</div>`}</div></div>`;
+    const b = d.querySelector(".dbody"); if (b) b.scrollTop = sc;
+  }
+
+  /* gemeinsames Popup für „Alle Ladungen“ und „Alle Fahrten“ */
+  _openDlg(mode) {
+    const d = this.shadowRoot.getElementById("cardlg");
+    this._dlg = mode;
+    d.dataset.mode = mode;
+    if (!d._bound) { d._bound = true; d.addEventListener("click", (ev) => { if (ev.target === d) d.close(); }); d.addEventListener("close", () => { this._dlg = null; }); }
+    d.innerHTML = "";
+    if (!d.open) try { d.showModal(); } catch (x) { d.setAttribute("open", ""); }
+  }
+
+
   /* --- Verlauf bis jetzt: SoC + Ladeleistung, Zeitraum wählbar --- */
+  /* Zeiträume aus history_ranges: Zahl (Stunden) oder { hours, label } */
+  _ranges() {
+    const l = (this._config.car.history_ranges || []).map((r) => {
+      const h = Number(typeof r === "object" ? r?.hours : r);
+      return h > 0 ? { h, label: (typeof r === "object" && r.label) || this._rangeLbl(h) } : null;
+    }).filter(Boolean);
+    return l.length ? l : [6, 24, 72, 168, 720].map((h) => ({ h, label: this._rangeLbl(h) }));
+  }
   _histHours() {
     if (this._hh) return this._hh;
+    const hs = this._ranges().map((r) => r.h);
     let v = null; try { v = Number(localStorage.getItem("mg-car-hist-hours")); } catch (e) {}
-    return (this._hh = v > 0 ? v : this._config.car.history_hours || 24);
+    const def = Number(this._config.car.history_hours);
+    return (this._hh = hs.includes(v) ? v : hs.includes(def) ? def : hs[Math.min(1, hs.length - 1)]);
   }
   _rangeLbl(h) { return h < 48 ? `${h} h` : h % 24 === 0 ? `${h / 24} T` : `${h} h`; }
 
@@ -737,8 +856,8 @@ class MgCarDashboard extends HTMLElement {
     const kw = this._st(pid)?.attributes?.unit_of_measurement?.toLowerCase() === "kw" ? 1 : 0.001;
     // aktuellen Wert bis "jetzt" fortschreiben
     const nowP = this._w(pid) / 1000, nowS = this._num(c.soc);
-    const seg = (c.history_ranges || [6, 24, 72, 168, 720]).map((h) =>
-      `<button class="hseg ${h === hrs ? "sel" : ""}" data-act="hrange" data-h="${h}">${this._rangeLbl(h)}</button>`).join("");
+    const seg = this._ranges().map((r) =>
+      `<button class="hseg ${r.h === hrs ? "sel" : ""}" data-act="hrange" data-h="${r.h}">${esc(r.label)}</button>`).join("");
     let body;
     if (!H) body = `<div class="empty">Lädt …</div>`;
     else if (H.bars?.rows?.length && hrs >= (c.bars_from_hours ?? 24)) body = this._barsSvg(H, t0, t1, W, Ht, X, soc, nowS);
@@ -790,7 +909,17 @@ class MgCarDashboard extends HTMLElement {
 
 
   /* ---------- Werte ---------- */
-  _st(id) { return id ? this._hass?.states[id] : undefined; }
+  _log(...a) { if (this._config?.debug) console.info("mg-car:", ...a); }
+  /* Zustand einer Entität. Ist sie nur kurz nicht verfügbar (z. B. während ev_assistant nach einer
+     Einstellungsänderung neu lädt), wird bis zu 60 s der letzte gültige Zustand weiterverwendet,
+     damit die Kacheln nicht kurz leer werden und springen. */
+  _st(id) {
+    if (!id) return undefined;
+    const s = this._hass?.states[id], now = Date.now(), lg = (this._good = this._good || {});
+    if (s && !OFFLINE_HD.includes(s.state)) { lg[id] = { s, t: now }; return s; }
+    const g = lg[id];
+    return g && now - g.t < 60000 ? g.s : s;
+  }
   _num(id) { const s = this._st(id); const v = s ? parseFloat(s.state) : NaN; return isNaN(v) ? 0 : v; }
   _w(id) { const s = this._st(id); if (!s) return 0; const u = (s.attributes.unit_of_measurement || "").toLowerCase(); return this._num(id) * (u === "kw" ? 1000 : 1); }
   _power(w) { w = Math.abs(w); return w >= 1000 ? { v: de(w / 1000, 1), u: "kW" } : { v: String(Math.round(w)), u: "W" }; }
@@ -816,13 +945,14 @@ class MgCarDashboard extends HTMLElement {
   /* ---------- Auto ---------- */
   /* ev_assistant-Entitäten finden (Integration „ev_assistant“, über translation_key) */
   _eva() {
-    const cfg = this._config.car.ev_assistant;
-    if (cfg && typeof cfg === "object") return cfg;
+    const cfg = this._config.car.ev_assistant, fixed = cfg && typeof cfg === "object" ? cfg : {};
     const reg = this._hass?.entities;
-    if (!reg) return {};
+    if (!reg) return { ...fixed };
     if (this._evaCache?.ref === reg) return this._evaCache.map;
-    const map = {};
+    // bisher gefundene Entitäten behalten: beim Neuladen der Integration fehlen sie sonst kurz
+    const map = { ...(this._evaCache?.map || {}) };
     for (const e of Object.values(reg)) if (e.platform === "ev_assistant" && e.translation_key) map[e.translation_key] = e.entity_id;
+    Object.assign(map, fixed);
     this._evaCache = { ref: reg, map };
     return map;
   }
@@ -887,7 +1017,7 @@ class MgCarDashboard extends HTMLElement {
     const LBL = { vehicle_avg_consumption: "Ø Verbrauch", trip_avg_consumption: "Ø Fahrten", odo_month_km: "km Monat", odo_day_km: "km heute",
       odo_week_km: "km Woche", odo_year_km: "km Jahr", cost_month: "Kosten Monat", cost_year: "Kosten Jahr", cost_week: "Kosten Woche",
       savings: "Ersparnis gesamt", kwh_month: "kWh Monat", odo_avg_day: "Ø km/Tag", odo: "km-Stand", range_estimate: "Reichweite",
-      total_trip_km: "km gesamt", cost_year: "Kosten gesamt" };
+      total_trip_km: "km gesamt" };
     const stats = (c.stats || []).map((k) => {
       const id = E[k] || (k.includes(".") ? k : null), f = this._fmt(id);
       if (!f) return "";
@@ -901,7 +1031,7 @@ class MgCarDashboard extends HTMLElement {
     const wf = this._st(E.wartung_faellig);
     if (wf && ["on", "true", "ja", "fällig"].includes(String(wf.state).toLowerCase())) flags.push(["mdi:wrench", "Wartung fällig", E.wartung_faellig]);
 
-    this.shadowRoot.getElementById("car").innerHTML = `
+    const html = `
       <div class="hd"><span class="ttl">${esc(c.name)}</span><span class="lbl ${charging ? "chg" : ""}">${charging ? `${icon("mdi:lightning-bolt")} ` : ""}${esc(status)}</span>
         <button class="arrow" data-act="cardetail" aria-label="Details">${icon("mdi:chevron-right")}</button></div>
       <div class="carbody" data-act="cardetail">
@@ -913,6 +1043,9 @@ class MgCarDashboard extends HTMLElement {
       ${line}
       ${flags.length ? `<div class="cflags">${flags.map(([i, t, id]) => `<button class="chip warn" data-act="more" data-entity="${esc(id)}">${icon(i)}${t}</button>`).join("")}</div>` : ""}
       ${stats ? `<div class="cstats">${stats}</div>` : ""}`;
+    // nur bei Änderungen neu aufbauen (sonst lädt z. B. das Bild jedes Mal neu)
+    const el = this.shadowRoot.getElementById("car");
+    if (el._html !== html) { el.innerHTML = html; el._html = html; }
     if (this._menu && !this.shadowRoot.contains(this._menu.anchorEl)) this._closeMenu();
   }
 
@@ -987,6 +1120,7 @@ class MgCarDashboard extends HTMLElement {
     e.stopPropagation();
     const { act, entity } = el.dataset;
     if (act === "charges") { this._openCharges(); return; }
+    if (act === "trips") { this._openTrips(); return; }
     if (act === "mset") {
       this._closeMenu();
       const id = el.dataset.entity;
@@ -1011,7 +1145,6 @@ class MgCarDashboard extends HTMLElement {
     if (act === "limset") {
       this._closeMenu();
       const id = el.dataset.entity, v = el.dataset.v, dom = id.split(".")[0];
-      console.info("mg-car: Ladeziel →", id, JSON.stringify(v), dom);
       if (dom === "select" || dom === "input_select") this._hass.callService(dom, "select_option", { entity_id: id, option: String(v) });
       else this._hass.callService(dom, "set_value", { entity_id: id, value: Number(v) });
       return;
@@ -1020,12 +1153,9 @@ class MgCarDashboard extends HTMLElement {
       this._closeMenu();
       const c = this._config.car, st = this._st(c.manual_mode);
       if (!st) return;
-      const MSTY = { "automatisch|auto": { label: "Auto", icon: "mdi:robot-outline", color: "#38bdf8" }, "aus|off": { label: "Aus", icon: "mdi:power-off", color: "#8b91a1" },
-        "pv": { label: "PV", icon: "mdi:solar-power", color: "#34d399" }, "min + pv|min+pv|minpv": { label: "Min+PV", icon: "mdi:transmission-tower", color: "#f7b733" },
-        "schnell|now|fast": { label: "Schnell", icon: "mdi:lightning-bolt", color: "#fb923c" } };
         const menu = document.createElement("div"); menu.className = "menu";
       menu.innerHTML = (st.attributes.options || []).map((o) => {
-        const m = this._styleFor(MSTY, o), cur = o === st.state;
+        const m = this._styleFor(c.manual_styles, o), cur = o === st.state;
         return `<button class="mg-menu-item mi ${cur ? "cur" : ""}" style="--cc:${m.color || "var(--text)"}" data-act="mset" data-entity="${esc(c.manual_mode)}" data-opt="${esc(o)}">
           ${icon(m.icon || "mdi:circle-small")}<span>${esc(this._label(m, o))}</span>${cur ? icon("mdi:check", "ck") : ""}</button>`;
       }).join("");
@@ -1068,11 +1198,10 @@ class MgCarDashboard extends HTMLElement {
       const enable = el.dataset.v === "1";
       this._balOptimistic = enable;
       this._render_mgmt();
-      console.info("mg-car: Vollladung →", enable, "entry:", this._evaEntryId());
       this._evaCall("set_weekly_full_charge_enabled", { enabled: enable });
-      // Nach 5 s wieder auf echten Sensorwert vertrauen (Integration hat dann reloaded)
+      // bis die Integration den neuen Wert meldet (spätestens nach 30 s wieder echten Wert zeigen)
       clearTimeout(this._balTimer);
-      this._balTimer = setTimeout(() => { this._balOptimistic = null; this._render_mgmt(); }, 5000);
+      this._balTimer = setTimeout(() => { this._balOptimistic = null; this._render_mgmt(); }, 30000);
       return;
     }
     if (act === "mpause") { this._evaCall("set_evcc_mode_control_pause", { paused: el.dataset.v === "1" }); return; }
@@ -1165,7 +1294,7 @@ ha-icon{--mdc-icon-size:22px;display:inline-flex}
 .wrap.compact .cstat span{font-size:10.5px}
 
 /* Detailfenster */
-.dlg{padding:0;border:0;background:transparent;max-width:min(980px,calc(100vw - 32px));width:100%;max-height:calc(100vh - 48px);overflow:visible;color:var(--text);font-family:inherit}
+.dlg{outline:none;padding:0;border:0;background:transparent;max-width:min(980px,calc(100vw - 32px));width:100%;max-height:calc(100vh - 48px);overflow:visible;color:var(--text);font-family:inherit}
 .dlg::backdrop{background:rgba(5,6,9,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .dpan{background:linear-gradient(180deg,#171a21,#111419);border:1px solid rgba(255,255,255,.09);border-radius:30px;box-shadow:0 30px 80px rgba(0,0,0,.6);display:flex;flex-direction:column;max-height:calc(100vh - 48px);overflow:hidden}
 .dhd{display:flex;align-items:center;gap:14px;padding:18px 20px;border-bottom:1px solid var(--line)}
@@ -1449,7 +1578,9 @@ const CAR_STYLE = `
 .wrap.carpage.fit .col{overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;padding-right:2px}
 .wrap.carpage.fit .panel{flex:none}
 .wrap.carpage.fit #trips{flex:1 1 0;min-height:260px}
-.wrap.carpage.fit #trips .tlist{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;padding-right:4px;margin-right:-8px}
+.wrap.carpage.fit #trips .tlist{flex:1;min-height:0;overflow:hidden;position:relative}
+#trips .tlist{cursor:pointer}
+#trips .tlist:hover .trip{border-color:rgba(255,255,255,.12)}
 @container (max-width:1180px){.wrap.carpage .grid{grid-template-columns:1fr 1fr}.wrap.carpage .col:nth-child(2){grid-column:1 / -1;order:1}}
 @container (max-width:720px){.wrap.carpage .grid{grid-template-columns:1fr}.carpage .soc{font-size:60px}.trip{grid-template-columns:44px 1fr auto;}.tkwh{display:none}.cstats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
