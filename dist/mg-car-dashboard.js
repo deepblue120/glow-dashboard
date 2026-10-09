@@ -7,6 +7,10 @@
 
 window.customCards = window.customCards || [];
 const VERSION = "3.2.0";
+// Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
+// die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
+// warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
+const EVA_API_VERSION = 1;
 const FONT_URL = "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap";
 
 const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
@@ -30,6 +34,9 @@ const MON_LONG = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", 
 const CAR_DEFAULTS = {
   fit_screen: true,   // Desktop/Laptop: Dashboard passt sich der Fensterhöhe an (kein Scrollen der Seite)
   debug: false,       // true = Diagnose-Meldungen in der Browser-Konsole (u. a. welche Quelle für welchen Wert)
+  // Panel-Konfiguration von ev_assistant. Setzt das ev_assistant-Panel selbst, wenn es die Karte einbettet;
+  // als eigenständige Karte leer lassen – dann liest die Karte sie über "get_panels".
+  ev_assistant_panel: null,
 
   // --- Energie (Verlauf: Aufteilung der geladenen kWh in Netz/PV) ---
   energy: {
@@ -157,7 +164,9 @@ class MgCarDashboard extends HTMLElement {
   static getStubConfig() { return {}; }
 
   setConfig(config) {
+    const prevPanel = this._config?.ev_assistant_panel;
     this._config = merge(CAR_DEFAULTS, config || {});
+    if (this._config.ev_assistant_panel !== prevPanel) { this._evaPanelReq = false; if (this._hass) this._loadEvaPanel(); }
     if (this._built) { this._built = false; this._build(); if (this._hass) this._update(true); }
   }
 
@@ -198,6 +207,7 @@ class MgCarDashboard extends HTMLElement {
     }
     this.shadowRoot.innerHTML = `<style>${STYLE}${CAR_STYLE}</style>
       <div class="wrap carpage">
+        <div class="apiwarn" id="apiwarn" hidden></div>
         <div class="grid">
           <div class="col"><section class="panel car" id="car"></section><section class="panel grow" id="trips"></section></div>
           <div class="col"><section class="panel" id="live"></section><section class="panel" id="mgmt"></section></div>
@@ -220,6 +230,8 @@ class MgCarDashboard extends HTMLElement {
     if (!force && sig === this._sigCar) return;
     this._sigCar = sig;
     if (this._menu) return;   // Auswahlmenü offen: nicht neu zeichnen
+    const aw = this.shadowRoot.getElementById("apiwarn");
+    if (aw) { aw.hidden = !this._apiWarn; aw.textContent = this._apiWarn || ""; }
     this._render_car();
     this._render_live();
     this._render_mgmt();
@@ -1031,15 +1043,27 @@ class MgCarDashboard extends HTMLElement {
   // Panel-Konfiguration von ev_assistant: Fahrzeugname, config_entry_id, evcc-Fahrzeug und die dort
   // konfigurierten Sensoren (bisher gibt ev_assistant davon nur den SoC-Sensor weiter)
   async _loadEvaPanel() {
-    if (!this._hass?.callWS || this._evaPanelReq) return;
+    if (this._evaPanelReq || !this._hass) return;
     this._evaPanelReq = true;
-    try {
-      const panels = await this._hass.callWS({ type: "get_panels" });
-      const p = Object.values(panels || {}).find((x) => x?.url_path === "ev-assistant" || x?.config?._panel_custom?.name === "ev-assistant-panel");
-      const cfg = p?.config || {}, want = this._config.car.ev_assistant_entry;
-      const vs = Array.isArray(cfg.vehicles) && cfg.vehicles.length ? cfg.vehicles : cfg.entities ? [cfg] : [];
-      this._evaPanel = vs.find((v) => want && v.config_entry_id === want) || vs[0] || null;
-    } catch (e) { this._evaPanel = null; }
+    let cfg = this._config.ev_assistant_panel;   // vom ev_assistant-Panel übergeben
+    if (!cfg && this._hass.callWS) {
+      try {
+        const panels = await this._hass.callWS({ type: "get_panels" });
+        const names = ["ev-assistant-panel", "ev-assistant-glow-panel"];
+        const l = Object.values(panels || {}).filter((x) => x?.config?.entities || x?.config?.vehicles);
+        const p = l.find((x) => x.url_path === "ev-assistant") || l.find((x) => names.includes(x.config?._panel_custom?.name));
+        cfg = p?.config || null;
+      } catch (e) { cfg = null; }
+    }
+    cfg = cfg || {};
+    const want = this._config.car.ev_assistant_entry;
+    const vs = Array.isArray(cfg.vehicles) && cfg.vehicles.length ? cfg.vehicles : cfg.entities ? [cfg] : [];
+    this._evaPanel = vs.find((v) => want && v.config_entry_id === want) || vs[0] || null;
+    // Schnittstellen-Version prüfen
+    const api = cfg.api_version;
+    this._apiWarn = api != null && Number(api) !== EVA_API_VERSION
+      ? `ev_assistant meldet Schnittstellen-Version ${api}, diese Karte erwartet ${EVA_API_VERSION}. Einzelne Werte können fehlen – bitte Karte bzw. ev_assistant aktualisieren.` : "";
+    if (this._apiWarn) console.warn("mg-car-dashboard:", this._apiWarn);
     this._log("ev_assistant-Fahrzeug", this._evaPanel);
     if (this._config.debug) {   // welche Quelle wird für welchen Wert verwendet
       const c = this._config.car, ev = c.evcc || {}, src = (id) => (!id ? "–" : id.startsWith("eva:") ? this._resolve(id) || `evcc-Live (${id})` : id);
@@ -1745,6 +1769,8 @@ const CAR_STYLE = `
 .glg .kwl::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;background:rgba(52,211,153,.75)}
 .chist .bkw{fill:rgba(52,211,153,.75)}
 .mbtn.ro{cursor:default}
+.apiwarn{margin:0 0 14px;padding:10px 14px;border-radius:14px;background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.35);color:var(--orange);font-size:13.5px;font-weight:600}
+.wrap.fit .apiwarn{flex:none}
 .mbtn.ro:hover{border-color:var(--tileb)}
 .glg .grl::before{background:rgba(72,143,194,.9)!important}
 .glg .pvl,.glg .grl{}

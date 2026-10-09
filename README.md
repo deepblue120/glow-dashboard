@@ -54,6 +54,20 @@ Entity-ID ersetzen. Nicht aus ev_assistant kommen: **Ladestrom** (`car.limit`), 
 Langzeitstatistik (`energy.car_power`) sowie Netzbezug/Hausverbrauch für die Aufteilung Netz/PV.
 Mit `debug: true` zeigt die Browser-Konsole, welche Quelle für welchen Wert verwendet wird.
 
+### Einbettung in ev_assistant
+
+Das ev_assistant-Panel kann die Karte einbetten und übergibt dann seine Panel-Konfiguration direkt:
+
+```js
+card.setConfig({ ev_assistant_panel: panel.config });
+```
+
+Als eigenständige Karte liest sie dieselbe Konfiguration selbst über `get_panels` (klassisches oder Glow-Panel
+von ev_assistant). Erwartete Felder: `config_entry_id`, `name`, `evcc_vehicle_name`, `entities` (eigene Entitäten
+von ev_assistant sowie `soc_entity`, `home_entity`, `power_entity`, `plug_entity`, `motor_entity`,
+`wallbox_connected_entity`, `wallbox_charging_entity`), optional `vehicles` (mehrere Fahrzeuge, Auswahl per
+`car.ev_assistant_entry`) und `api_version`. Die Karte unterstützt `api_version: 1` und warnt bei Abweichung.
+
 ### Beispiel mit eigenen Sensoren
 
 ```yaml
