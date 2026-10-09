@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=8`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=9`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -48,10 +48,13 @@ type: custom:mg-car-dashboard
 | Lademodus umschalten | ev_assistant (Auto / Smart / Immer / Schnell) |
 | Kennzahlen, Ladeplan, Vollladung | ev_assistant |
 
+| Verlauf (geladene kWh) | „Wallbox Ladeleistung“ aus ev_assistant (ab 0.99.34), sonst das evcc-Ladelogbuch |
+| PV-Anteil im Verlauf | evcc (PV-Anteil der jeweiligen Ladesitzung) |
+
 Einstellungen mit `eva:` stehen für diese automatischen Quellen. Jeder Wert lässt sich durch eine eigene
-Entity-ID ersetzen. Nicht aus ev_assistant kommen: **Ladestrom** (`car.limit`), **Motor/Stecker**
-(gibt ev_assistant bisher nicht weiter), **Bild** und für den **Verlauf** ein Ladeleistungs-Sensor mit
-Langzeitstatistik (`energy.car_power`) sowie Netzbezug/Hausverbrauch für die Aufteilung Netz/PV.
+Entity-ID ersetzen. Nicht aus ev_assistant kommen: **Ladestrom** (`car.limit`) und das **Bild**.
+Motor, Stecker und Ladeleistung gibt ev_assistant ab Version 0.99.34 weiter. Ohne evcc lässt sich der PV-Anteil
+über Netzbezug und Hausverbrauch (Leistung) berechnen: `energy.grid_import`, `energy.home`.
 Mit `debug: true` zeigt die Browser-Konsole, welche Quelle für welchen Wert verwendet wird.
 
 ### Einbettung in ev_assistant
@@ -73,9 +76,7 @@ von ev_assistant sowie `soc_entity`, `home_entity`, `power_entity`, `plug_entity
 ```yaml
 type: custom:mg-car-dashboard
 energy:
-  car_power: sensor.shelly_wallbox_power
-  grid_import: sensor.alpha_ess_netzbezug_leistung_vom_netz
-  home: sensor.strom_leistung_haus_gesamt_inkl_bkw_und_marstek
+  car_power: sensor.shelly_wallbox_power   # nur nötig mit ev_assistant vor 0.99.34
 car:
   image: /local/auto.png
   status: binary_sensor.e_c3_motor
@@ -135,4 +136,4 @@ car:
 | Version | Datei |
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.2.0  | mg-car-dashboard.js (eigenständig) |
+| 3.2.1  | mg-car-dashboard.js (eigenständig) |

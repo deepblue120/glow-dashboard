@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=8  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=9  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.2.0";
+const VERSION = "3.2.1";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -38,11 +38,13 @@ const CAR_DEFAULTS = {
   // als eigenständige Karte leer lassen – dann liest die Karte sie über "get_panels".
   ev_assistant_panel: null,
 
-  // --- Energie (Verlauf: Aufteilung der geladenen kWh in Netz/PV) ---
+  // --- Energie (Verlauf) ---
+  // Geladene kWh je Stunde kommen aus der Ladeleistung (Standard: „Wallbox Ladeleistung“ aus ev_assistant ab 0.99.34),
+  // ohne Ladeleistung aus dem evcc-Ladelogbuch. Den PV-Anteil liefert evcc je Ladesitzung.
   energy: {
-    car_power: "",      // Ladeleistung mit Langzeitstatistik für den Verlauf (leer = aus ev_assistant, sofern dort freigegeben)
-    grid_import: "",    // Netzbezug (Leistung) – ohne: keine Aufteilung Netz/PV im Verlauf
-    home: "",           // Hausverbrauch inkl. Auto (Leistung)
+    car_power: "",      // eigener Ladeleistungs-Sensor mit Langzeitstatistik (leer = aus ev_assistant)
+    grid_import: "",    // nur ohne evcc: Netzbezug (Leistung) für die Aufteilung Netz/PV
+    home: "",           // nur ohne evcc: Hausverbrauch inkl. Auto (Leistung)
   },
 
   car: {
@@ -272,21 +274,17 @@ class MgCarDashboard extends HTMLElement {
   }
 
   async _lastSessFromEva() {
-    const id = this._evaEntryId(), ev = this._config.car.evcc || {};
-    if (!id || !this._hass?.callWS) return;
+    const ev = this._config.car.evcc || {};
+    if (!this._evaEntryId() || !this._hass?.callWS) return;
     try {
-      const res = await this._hass.callWS({ type: "ev_assistant/evcc_sessions", config_entry_id: id });
-      const veh = this._evccVehicle();
-      const l = (res?.sessions || []).filter((x) => x.finished && (!veh || !x.vehicle || String(x.vehicle).toLowerCase() === veh))
-        .sort((a, b) => Date.parse(b.finished) - Date.parse(a.finished));
-      const x = l[0];
+      const x = (await this._evccSessions(true)).filter((s) => s.finished).sort((a, b) => b.te - a.te)[0];
       if (!x) { this._lastSess = { none: true }; return this._update(true); }
       const vals = {};
-      if (ev.session_energy) vals[ev.session_energy] = x.chargedEnergy ?? null;
-      if (ev.session_solar) vals[ev.session_solar] = x.solarPercentage ?? null;
-      if (ev.session_price) vals[ev.session_price] = x.price ?? null;
-      if (ev.duration) vals[ev.duration] = typeof x.chargeDuration === "number" ? x.chargeDuration / 1e9 / 60 : null;   // ns → min
-      this._lastSess = { end: Date.parse(x.finished), vals, src: "evcc" };
+      if (ev.session_energy) vals[ev.session_energy] = x.kwh;
+      if (ev.session_solar) vals[ev.session_solar] = x.pv;
+      if (ev.session_price) vals[ev.session_price] = x.price;
+      if (ev.duration) vals[ev.duration] = x.dur;
+      this._lastSess = { end: x.te, vals, src: "evcc" };
     } catch (e) { this._lastSess = { err: true }; }
     this._log("letzte Ladung", this._lastSess);
     this._update(true);
@@ -795,7 +793,6 @@ class MgCarDashboard extends HTMLElement {
   async _loadCarHist() {
     const c = this._config.car, hi = this._histIds(), ids = [hi.soc, hi.pw].filter(Boolean);
     if (!this._hass) return;
-    if (!ids.length) { this._carHist = { t: Date.now(), hrs: this._histHours(), data: {}, src: {}, ids, bars: null }; return this._update(true); }
     const hrs = this._histHours(), req = (this._histReq = (this._histReq || 0) + 1);
     const t1 = Date.now(), t0 = t1 - hrs * 3600000, data = {}, src = {};
     const ts = (v) => (typeof v === "number" ? v : new Date(v).getTime());
@@ -834,28 +831,76 @@ class MgCarDashboard extends HTMLElement {
     return { soc: this._real(c.soc), pw: this._real(ev.power) || this._real(this._config.energy.car_power) };
   }
 
-  /* Stündlich geladene kWh, aufgeteilt nach Netz und PV/Speicher (aus Langzeitstatistik) */
-  async _loadBars(t0, t1, hrs) {
-    const c = this._config.car, ev = c.evcc || {}, e = this._config.energy;
-    const hi = this._histIds(), pid = hi.pw, gid = this._real(c.split_grid || e.grid_import), hid = this._real(c.split_home || e.home), sid = hi.soc;
-    if (!this._hass.callWS || !pid) return null;
-    const ids = [pid, gid, hid, sid].filter(Boolean);
+  /* evcc-Ladelogbuch über ev_assistant (für „Letzte Ladung“ und den PV-Anteil im Verlauf), 5 min zwischengespeichert */
+  async _evccSessions(force) {
+    if (!force && this._sess && Date.now() - this._sess.t < 5 * 60000) return this._sess.list;
+    const id = this._evaEntryId();
+    if (!id || !this._hass?.callWS) return [];
     try {
-      const st = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(t0).toISOString(),
-        end_time: new Date(t1).toISOString(), statistic_ids: ids, period: "hour", types: ["mean"] });
-      const ts = (v) => (typeof v === "number" ? v : new Date(v).getTime());
-      const toKW = (id) => { const u = (this._st(id)?.attributes?.unit_of_measurement || "").toLowerCase(); return u === "kw" ? 1 : u === "mw" ? 1000 : 0.001; };
-      const map = (id) => { const m = new Map(); for (const x of st?.[id] || []) if (x.mean != null) m.set(ts(x.start), x.mean); return m; };
-      const P = map(pid), G = map(gid), Hm = map(hid), S = map(sid), split = !!(gid && hid);
-      const fp = toKW(pid), fg = toKW(gid), fh = toKW(hid);
-      let rows = [];
-      for (const [t, v] of P) {
-        const kwh = Math.max(0, v * fp);
-        const home = (Hm.get(t) ?? 0) * fh, grid = Math.max(0, (G.get(t) ?? 0) * fg);
-        // Anteil Netz = Netzbezug / Gesamtverbrauch der Stunde (Auto im Hausverbrauch enthalten)
-        const share = home > 0.01 ? Math.min(1, grid / Math.max(home, kwh)) : (G.has(t) ? 1 : 0);
-        rows.push(split ? { t, kwh, grid: kwh * share, pv: kwh * (1 - share), soc: S.get(t) } : { t, kwh, grid: 0, pv: 0, soc: S.get(t) });
-      }
+      const res = await this._hass.callWS({ type: "ev_assistant/evcc_sessions", config_entry_id: id });
+      const veh = this._evccVehicle();
+      const list = (res?.sessions || []).filter((x) => !veh || !x.vehicle || String(x.vehicle).toLowerCase() === veh).map((x) => {
+        const ts = x.created ? Date.parse(x.created) : NaN, te = x.finished ? Date.parse(x.finished) : Date.now();
+        return { ts, te, kwh: x.chargedEnergy ?? null, pv: x.solarPercentage ?? null, price: x.price ?? null,
+          dur: typeof x.chargeDuration === "number" ? x.chargeDuration / 1e9 / 60 : null, finished: !!x.finished };
+      }).filter((x) => !isNaN(x.ts) && x.te > x.ts);
+      this._sess = { t: Date.now(), list };
+    } catch (e) { this._sess = { t: Date.now(), list: [] }; }
+    return this._sess.list;
+  }
+
+  /* Geladene kWh je Stunde, aufgeteilt nach PV und Netz.
+     - kWh: aus der Langzeitstatistik der Ladeleistung; ohne Ladeleistungs-Sensor aus dem evcc-Ladelogbuch
+       (Energie jeder Sitzung gleichmäßig über ihre Dauer verteilt)
+     - PV-Anteil: aus dem evcc-Ladelogbuch (PV-Anteil der Sitzung, in die die Stunde fällt); ohne evcc aus
+       Netzbezug und Hausverbrauch (energy.grid_import / energy.home), sonst keine Aufteilung */
+  async _loadBars(t0, t1, hrs) {
+    const c = this._config.car, e = this._config.energy, H = 3600000;
+    const hi = this._histIds(), pid = hi.pw, gid = this._real(c.split_grid || e.grid_import), hid = this._real(c.split_home || e.home), sid = hi.soc;
+    if (!this._hass.callWS) return null;
+    const sessions = (await this._evccSessions()).filter((x) => x.te > t0 - H && x.ts < t1);
+    // Stunde → überwiegende Sitzung
+    const sessAt = (t) => { let best = null, ov = 0; for (const x of sessions) { const o = Math.min(x.te, t + H) - Math.max(x.ts, t); if (o > ov) { ov = o; best = x; } } return best; };
+    let rows = [], split = false, src = "";
+    try {
+      if (pid) {
+        const ids = [pid, gid, hid, sid].filter(Boolean);
+        const st = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(t0).toISOString(),
+          end_time: new Date(t1).toISOString(), statistic_ids: ids, period: "hour", types: ["mean"] });
+        const ts = (v) => (typeof v === "number" ? v : new Date(v).getTime());
+        const toKW = (id) => { const u = (this._st(id)?.attributes?.unit_of_measurement || "").toLowerCase(); return u === "kw" ? 1 : u === "mw" ? 1000 : 0.001; };
+        const map = (id) => { const m = new Map(); for (const x of st?.[id] || []) if (x.mean != null) m.set(ts(x.start), x.mean); return m; };
+        const P = map(pid), G = map(gid), Hm = map(hid), S = map(sid), fp = toKW(pid), fg = toKW(gid), fh = toKW(hid);
+        const useEvcc = sessions.length > 0, useSens = !useEvcc && !!(gid && hid);
+        for (const [t, v] of P) {
+          const kwh = Math.max(0, v * fp);
+          let share = null;   // Netzanteil 0…1
+          if (useEvcc) { const x = sessAt(t); if (x?.pv != null) share = 1 - Math.max(0, Math.min(100, x.pv)) / 100; }
+          else if (useSens) {
+            const home = (Hm.get(t) ?? 0) * fh, grid = Math.max(0, (G.get(t) ?? 0) * fg);
+            // Anteil Netz = Netzbezug / Gesamtverbrauch der Stunde (Auto im Hausverbrauch enthalten)
+            share = home > 0.01 ? Math.min(1, grid / Math.max(home, kwh)) : (G.has(t) ? 1 : 0);
+          }
+          // Stunde ohne zuordenbare Sitzung (z. B. Laden ohne evcc): ohne Aufteilung als Netz gezählt
+          rows.push({ t, kwh, grid: kwh * (share ?? 1), pv: kwh * (1 - (share ?? 1)), soc: S.get(t) });
+        }
+        split = useEvcc || useSens; src = useEvcc ? "evcc" : useSens ? "sensor" : "";
+      } else if (sessions.length) {
+        // ohne Ladeleistungs-Sensor: Energie der Sitzungen gleichmäßig auf ihre Stunden verteilen
+        const acc = new Map();
+        for (const x of sessions) {
+          if (!(x.kwh > 0)) continue;
+          for (let t = Math.floor(x.ts / H) * H; t < x.te; t += H) {
+            const f = (Math.min(x.te, t + H) - Math.max(x.ts, t)) / (x.te - x.ts);
+            if (f <= 0 || t + H <= t0) continue;
+            const r = acc.get(t) || { t, kwh: 0, grid: 0, pv: 0, soc: null }, k = x.kwh * f, pv = x.pv != null ? Math.max(0, Math.min(100, x.pv)) / 100 : 0;
+            r.kwh += k; r.pv += k * pv; r.grid += k * (1 - pv);
+            acc.set(t, r);
+          }
+        }
+        rows = [...acc.values()]; split = true; src = "evcc-log";
+      } else return null;
+      if (!split) rows = rows.map((r) => ({ ...r, grid: 0, pv: 0 }));
       rows.sort((a, b) => a.t - b.t);
       const unit = this._barUnit(hrs);
       if (unit !== "h") {   // Stundenwerte zu Tages- bzw. Wochensummen zusammenfassen
@@ -869,7 +914,8 @@ class MgCarDashboard extends HTMLElement {
         }
         rows = [...groups.values()];
       }
-      return { rows, unit, split };
+      this._log("Verlauf-Balken", { unit, split, src, kwh: pid || "aus Ladelogbuch", sessions: sessions.length });
+      return { rows, unit, split, src };
     } catch (e) { return null; }
   }
 
@@ -927,7 +973,7 @@ class MgCarDashboard extends HTMLElement {
         <div class="gtip" hidden></div>
         <span class="gmax">${de(maxK, 1)} kWh${{ h: "/h", d: "/Tag", w: "/Woche" }[B.unit]}</span></div>
       <div class="glg">${B.split ? `<span class="pvl">PV/Speicher ${de(sum.p, 1)} kWh</span><span class="grl">Netz ${de(sum.g, 1)} kWh</span>` : `<span class="kwl">Geladen ${de(sum.k, 1)} kWh</span>`}<span class="s">Ladestand ${Math.round(nowS)} %</span>
-<span class="src">${{ h: "Stundenwerte", d: "Tageswerte", w: "Wochenwerte" }[B.unit]}</span></div>`;
+<span class="src">${{ h: "Stundenwerte", d: "Tageswerte", w: "Wochenwerte" }[B.unit]}${B.src === "evcc-log" ? " aus dem evcc-Ladelogbuch" : B.src === "evcc" ? " · PV-Anteil aus evcc" : ""}</span></div>`;
   }
 
   /* Maus/Finger über den Balken: Werte anzeigen */
