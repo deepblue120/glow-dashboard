@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=11  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=12  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.2.3";
+const VERSION = "3.3.0";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -37,6 +37,12 @@ const CAR_DEFAULTS = {
   // Panel-Konfiguration von ev_assistant. Setzt das ev_assistant-Panel selbst, wenn es die Karte einbettet;
   // als eigenständige Karte leer lassen – dann liest die Karte sie über "get_panels".
   ev_assistant_panel: null,
+  // Mehrere Autos: die Karte bietet alle Fahrzeuge aus ev_assistant zur Auswahl an (Pfeil neben dem Namen).
+  // Hier lassen sich je Auto eigene Werte setzen – Schlüssel ist der Fahrzeugname oder die config_entry_id, z. B.
+  //   vehicles:
+  //     "Citroën ë-C3": { image: /local/c3.png }
+  //     "Renault Zoe":  { image: /local/zoe.png, evcc_loadpoint: carport }
+  vehicles: {},
 
   // --- Energie (Verlauf) ---
   // Geladene kWh je Stunde kommen aus der Ladeleistung (Standard: „Wallbox Ladeleistung“ aus ev_assistant ab 0.99.34),
@@ -168,7 +174,9 @@ class MgCarDashboard extends HTMLElement {
 
   setConfig(config) {
     const prevPanel = this._config?.ev_assistant_panel;
-    this._config = merge(CAR_DEFAULTS, config || {});
+    this._rawConfig = config || {};
+    this._config = merge(CAR_DEFAULTS, this._rawConfig);
+    if (this._evaPanel) this._applyVehicle();
     if (this._config.ev_assistant_panel !== prevPanel) { this._evaPanelReq = false; if (this._hass) this._loadEvaPanel(); }
     if (this._built) { this._built = false; this._build(); if (this._hass) this._update(true); }
   }
@@ -314,8 +322,8 @@ class MgCarDashboard extends HTMLElement {
 
   /* --- Alle Ladungen (ev_assistant: evcc-Ladelogbuch + Fremdladungen) --- */
   _evaEntryId() {
-    if (this._config.car.ev_assistant_entry) return this._config.car.ev_assistant_entry;
     if (this._evaPanel?.config_entry_id) return this._evaPanel.config_entry_id;
+    if (this._config.car.ev_assistant_entry) return this._config.car.ev_assistant_entry;
     if (this._evaEntryCache) return this._evaEntryCache;
     const reg = this._hass?.entities || {}, dev = this._hass?.devices || {};
     for (const id of Object.values(this._eva())) {
@@ -1113,9 +1121,14 @@ class MgCarDashboard extends HTMLElement {
       } catch (e) { cfg = null; }
     }
     cfg = cfg || {};
-    const want = this._config.car.ev_assistant_entry;
-    const vs = Array.isArray(cfg.vehicles) && cfg.vehicles.length ? cfg.vehicles : cfg.entities ? [cfg] : [];
+    this._evaPanelCfg = cfg;
+    let vs = Array.isArray(cfg.vehicles) && cfg.vehicles.length ? cfg.vehicles : cfg.entities ? [cfg] : [];
+    if (!vs.length) vs = this._evaDevices();   // ältere ev_assistant-Versionen: Fahrzeuge aus den Geräten
+    this._evaVehicles = vs;
+    let want = null; try { want = localStorage.getItem(this._vehKey()); } catch (e) {}
+    if (!vs.some((v) => v.config_entry_id === want)) want = this._config.car.ev_assistant_entry;
     this._evaPanel = vs.find((v) => want && v.config_entry_id === want) || vs[0] || null;
+    this._applyVehicle();
     // Schnittstellen-Version prüfen
     const api = cfg.api_version;
     this._apiWarn = api != null && Number(api) !== EVA_API_VERSION
@@ -1128,6 +1141,51 @@ class MgCarDashboard extends HTMLElement {
         ["trips", c.trips]].map(([k, v]) => [k, { Quelle: src(v) }])));
     }
     this._loadCarHist(); this._loadLastSession(); this._loadTrips();
+    this._update(true);
+  }
+
+  _vehKey() { return "mg-car-vehicle-" + (this._config?.quick_layout_key || "default"); }
+
+  // Fahrzeuge ohne Panel-Konfiguration: je ev_assistant-Gerät (ein Gerät pro Fahrzeug bzw. config entry)
+  _evaDevices() {
+    const reg = this._hass?.entities || {}, dev = this._hass?.devices || {}, out = new Map();
+    for (const e of Object.values(reg)) {
+      if (e.platform !== "ev_assistant" || !e.device_id) continue;
+      const d = dev[e.device_id], id = d?.config_entries?.[0];
+      if (id && !out.has(id)) out.set(id, { config_entry_id: id, name: d.name_by_user || d.name || "Auto", entities: {} });
+    }
+    return [...out.values()];
+  }
+
+  // Konfiguration für das gewählte Fahrzeug: Grundkonfiguration + vehicles[Name oder config_entry_id]
+  _applyVehicle() {
+    const v = this._evaPanel, raw = JSON.parse(JSON.stringify(this._rawConfig || {})), vmap = raw.vehicles || {};   // Kopie: Kartenkonfiguration nicht verändern
+    // Bettet das ev_assistant-Panel die Karte ein und übersetzt dabei die Werte des ersten Fahrzeugs in car-Optionen,
+    // gelten diese bei mehreren Fahrzeugen nicht für die anderen – dann ignorieren (die Karte findet sie selbst).
+    const P = this._evaPanelCfg || {}, E0 = P.entities || {};
+    if (raw.ev_assistant_panel && (this._evaVehicles || []).length > 1 && raw.car) {
+      const same = { name: P.name, ev_assistant_entry: P.config_entry_id, evcc_vehicle: P.evcc_vehicle_name, soc: E0.soc_entity, status: E0.motor_entity, cable: E0.plug_entity };
+      for (const [k, val] of Object.entries(same)) if (val != null && raw.car[k] === val) delete raw.car[k];
+      if (raw.energy && raw.energy.car_power === (E0.power_entity || E0.home_entity)) delete raw.energy.car_power;
+    }
+    const key = Object.keys(vmap).find((k) => v && (k === v.config_entry_id || k.toLowerCase() === String(v.name || "").toLowerCase()));
+    const over = key ? vmap[key] : {};
+    const { energy: oe, ...oc } = over || {};
+    this._config = merge(CAR_DEFAULTS, merge(raw, { car: oc, ...(oe ? { energy: oe } : {}) }));
+  }
+
+  // anderes Fahrzeug gewählt: alles Fahrzeugbezogene verwerfen und neu laden
+  _selectVehicle(entryId) {
+    const v = (this._evaVehicles || []).find((x) => x.config_entry_id === entryId);
+    if (!v || v === this._evaPanel) return;
+    try { localStorage.setItem(this._vehKey(), entryId); } catch (e) {}
+    this._evaPanel = v;
+    this._applyVehicle();
+    for (const k of ["_evaCache", "_evaEntryCache", "_sess", "_evaTrips", "_lastSess", "_carHist", "_charges", "_tripCount", "_wasCharging", "_balOptimistic", "_evaModeOpt", "_pendingNum"]) this[k] = null;
+    this._good = {};
+    const car = this.shadowRoot?.getElementById("car"); if (car) car._html = null;
+    this._log("Fahrzeug gewechselt", v);
+    this._loadCarHist(); this._loadLastSession(); this._loadTrips(true);
     this._update(true);
   }
 
@@ -1223,12 +1281,15 @@ class MgCarDashboard extends HTMLElement {
     const cfg = this._config.car.ev_assistant, fixed = cfg && typeof cfg === "object" ? cfg : {};
     const reg = this._hass?.entities;
     if (!reg) return { ...fixed };
-    if (this._evaCache?.ref === reg) return this._evaCache.map;
-    // bisher gefundene Entitäten behalten: beim Neuladen der Integration fehlen sie sonst kurz
-    const map = { ...(this._evaCache?.map || {}) };
-    for (const e of Object.values(reg)) if (e.platform === "ev_assistant" && e.translation_key) map[e.translation_key] = e.entity_id;
+    const entry = this._evaPanel?.config_entry_id || this._config.car.ev_assistant_entry || null;
+    if (this._evaCache?.ref === reg && this._evaCache.entry === entry) return this._evaCache.map;
+    // bisher gefundene Entitäten behalten (beim Neuladen der Integration fehlen sie sonst kurz) – aber nur vom selben Fahrzeug
+    const map = { ...(this._evaCache?.entry === entry ? this._evaCache.map : {}) }, dev = this._hass?.devices || {};
+    // bei mehreren Fahrzeugen nur die Entitäten des gewählten (über das Gerät bzw. den config entry)
+    const mine = (e) => !entry || e.config_entry_id === entry || (dev[e.device_id]?.config_entries || []).includes(entry);
+    for (const e of Object.values(reg)) if (e.platform === "ev_assistant" && e.translation_key && mine(e)) map[e.translation_key] = e.entity_id;
     Object.assign(map, fixed);
-    this._evaCache = { ref: reg, map };
+    this._evaCache = { ref: reg, entry, map };
     return map;
   }
 
@@ -1307,7 +1368,9 @@ class MgCarDashboard extends HTMLElement {
     if (wf && ["on", "true", "ja", "fällig"].includes(String(wf.state).toLowerCase())) flags.push(["mdi:wrench", "Wartung fällig", E.wartung_faellig]);
 
     const html = `
-      <div class="hd"><span class="ttl">${esc(name)}</span><span class="lbl ${charging ? "chg" : ""}">${charging ? `${icon("mdi:lightning-bolt")} ` : ""}${esc(status)}</span>
+      <div class="hd">${(this._evaVehicles || []).length > 1
+        ? `<button class="ttl vsel" data-act="vehmenu" title="Fahrzeug wählen">${esc(name)}${icon("mdi:chevron-down", "vchv")}</button>`
+        : `<span class="ttl">${esc(name)}</span>`}<span class="lbl ${charging ? "chg" : ""}">${charging ? `${icon("mdi:lightning-bolt")} ` : ""}${esc(status)}</span>
         <button class="arrow" data-act="cardetail" aria-label="Details">${icon("mdi:chevron-right")}</button></div>
       <div class="carbody" data-act="cardetail">
         <div><div class="soc">${hasSoc ? Math.round(soc) : "–"}<sup>%</sup></div>
@@ -1481,6 +1544,15 @@ class MgCarDashboard extends HTMLElement {
       this._balTimer = setTimeout(() => { this._balOptimistic = null; this._render_mgmt(); }, 30000);
       return;
     }
+    if (act === "vehmenu") {
+      this._closeMenu();
+      const cur = this._evaPanel?.config_entry_id, menu = document.createElement("div"); menu.className = "menu";
+      menu.innerHTML = (this._evaVehicles || []).map((v) => `<button class="mg-menu-item mi ${v.config_entry_id === cur ? "cur" : ""}" data-act="vehset" data-v="${esc(v.config_entry_id)}">
+        ${icon("mdi:car-electric")}<span>${esc(v.name || v.title || "Auto")}</span>${v.config_entry_id === cur ? icon("mdi:check", "ck") : ""}</button>`).join("");
+      this._openMenuAt(el, menu);
+      return;
+    }
+    if (act === "vehset") { this._closeMenu(); this._selectVehicle(el.dataset.v); return; }
     if (act === "evamode") {
       const v = el.dataset.v;
       this._evaModeOpt = { v, t: Date.now() };
@@ -1846,6 +1918,9 @@ const CAR_STYLE = `
 .glg .kwl::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;background:rgba(52,211,153,.75)}
 .chist .bkw{fill:rgba(52,211,153,.75)}
 .mbtn.ro{cursor:default}
+.ttl.vsel{display:inline-flex;align-items:center;gap:6px;cursor:pointer;border-radius:10px;padding:2px 4px 2px 0}
+.ttl.vsel:hover{color:var(--text)}
+.ttl.vsel .vchv{--mdc-icon-size:20px;opacity:.75}
 .apiwarn{margin:0 0 14px;padding:10px 14px;border-radius:14px;background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.35);color:var(--orange);font-size:13.5px;font-weight:600}
 .wrap.fit .apiwarn{flex:none}
 .mbtn.ro:hover{border-color:var(--tileb)}
