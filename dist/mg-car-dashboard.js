@@ -1850,6 +1850,6 @@ const CAR_STYLE = `
 
 if (!customElements.get("mg-car-dashboard")) customElements.define("mg-car-dashboard", MgCarDashboard);
 if (!window.customCards.some((c) => c.type === "mg-car-dashboard"))
-  window.customCards.push({ type: "mg-car-dashboard", name: "MG Auto", description: "Auto-Seite mit evcc, ev_assistant und Fahrtenbuch im Glow-Stil" });
+  window.customCards.push({ type: "mg-car-dashboard", name: "Glow Auto", description: "Auto-Seite mit evcc, ev_assistant und Fahrtenbuch im Glow-Stil" });
 
-console.info(`%c MG-CAR-DASHBOARD %c ${VERSION} `, "background:#f7b733;color:#111;font-weight:700", "background:#14171e;color:#f7b733");
+console.info(`%c GLOW AUTO (mg-car-dashboard) %c ${VERSION} `, "background:#f7b733;color:#111;font-weight:700", "background:#14171e;color:#f7b733");
