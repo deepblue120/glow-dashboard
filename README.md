@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=11`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=12`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -56,6 +56,22 @@ Entity-ID ersetzen. Bei mehreren Ladepunkten in der evcc-Integration wählt `car
 Motor, Stecker und Ladeleistung gibt ev_assistant ab Version 0.99.34 weiter. Ohne evcc lässt sich der PV-Anteil
 über Netzbezug und Hausverbrauch (Leistung) berechnen: `energy.grid_import`, `energy.home`.
 Mit `debug: true` zeigt die Browser-Konsole, welche Quelle für welchen Wert verwendet wird.
+
+### Mehrere Autos
+
+Sind in ev_assistant mehrere Fahrzeuge eingerichtet, erscheint neben dem Namen ein Pfeil zur Auswahl. Alle Werte
+(ev_assistant-Sensoren, evcc-Live-Werte, Fahrtenbuch, Ladungen, Verlauf) kommen dann vom gewählten Auto. Die Auswahl
+merkt sich der Browser; `car.ev_assistant_entry` legt das Auto beim ersten Öffnen fest. Eigene Werte je Auto:
+
+```yaml
+type: custom:mg-car-dashboard
+vehicles:
+  "Citroën ë-C3": { image: /local/c3.png }
+  "Renault Zoe":  { image: /local/zoe.png, evcc_loadpoint: carport }
+```
+
+Schlüssel ist der Fahrzeugname aus ev_assistant oder die `config_entry_id`; erlaubt sind alle `car`-Optionen
+(und `energy`). `evcc_loadpoint` wählt bei mehreren Ladepunkten das Ladeziel-Select der evcc-Integration.
 
 ### Einbettung in ev_assistant
 
@@ -133,4 +149,4 @@ car:
 | Version | Datei |
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.2.3  | mg-car-dashboard.js (eigenständig) |
+| 3.3.0  | mg-car-dashboard.js (eigenständig) |
