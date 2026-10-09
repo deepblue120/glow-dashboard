@@ -47,7 +47,6 @@ type: custom:mg-car-dashboard
 | Fahrtenbuch | ev_assistant |
 | Lademodus umschalten | ev_assistant (Auto / Smart / Immer / Schnell) |
 | Kennzahlen, Ladeplan, Vollladung | ev_assistant |
-
 | Verlauf (geladene kWh) | „Wallbox Ladeleistung“ aus ev_assistant (ab 0.99.34), sonst das evcc-Ladelogbuch |
 | PV-Anteil im Verlauf | evcc (PV-Anteil der jeweiligen Ladesitzung) |
 
