@@ -88,7 +88,9 @@ car:
 | `car.trips_max` | Fahrten im Fenster „Alle Fahrten“ |
 | `car.history_ranges` | Zeiträume im Verlauf: Stunden oder `{ hours, label }` |
 | `car.history_hours` | Zeitraum beim ersten Öffnen |
-| `car.bars_from_hours` | ab diesem Zeitraum Balken statt Linie |
+| `car.bars_from_hours` | ab diesem Zeitraum Balken statt Linie (0 = immer Balken) |
+| `car.bars_daily_from_hours` | ab diesem Zeitraum Tagesbalken, darunter stündlich (Standard 72 = 3 Tage) |
+| `car.bars_weekly_from_hours` | ab diesem Zeitraum Wochenbalken Mo–So (Standard 744 = 31 Tage) |
 | `car.split_grid` / `split_home` | abweichende Sensoren für die Aufteilung Netz/PV |
 | `car.session_days` / `session_stats_days` | Suchzeitraum für „Letzte Ladung“ (Verlauf / Langzeitstatistik) |
 | `car.mode_styles`, `always_styles`, `manual_styles` | Beschriftung, Symbol und Farbe der Auswahlwerte |
@@ -98,4 +100,4 @@ car:
 | Version | Datei |
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.0.0  | mg-car-dashboard.js (eigenständig) |
+| 3.1.0  | mg-car-dashboard.js (eigenständig) |
