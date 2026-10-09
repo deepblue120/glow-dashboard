@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=10  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=11  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.2.2";
+const VERSION = "3.2.3";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -64,7 +64,7 @@ const CAR_DEFAULTS = {
     mode: "",                         // evcc-Lademodus als select-Entität (z. B. aus der evcc-Integration)
     always: "",                       // „Immer laden“ als select-Entität (nur zusammen mit mode)
     manual_mode: "",                  // eigene Vorgabe (input_select automatisch / manuell)
-    limit: "eva:max_current",         // Ladestrom (A): automatisch aus der evcc-Integration (Select „maxcurrent“), oder eigene number-/select-Entität
+    limit: "",                        // Ladestrom (A) einstellbar anzeigen: "eva:max_current" = Select der evcc-Integration, oder eigene number-/select-Entität (leer = aus)
 
     // --- evcc (Ladepunkt) – Standard: Live-Werte aus ev_assistant ---
     evcc: {
@@ -549,7 +549,6 @@ class MgCarDashboard extends HTMLElement {
       menu.innerHTML = numOpts.map((v) => `<button class="mg-menu-item mi ${v === parseFloat(cur) ? "cur" : ""}" data-act="limset" data-entity="${esc(id)}" data-v="${v}"><span>${v} %</span>${v === parseFloat(cur) ? icon("mdi:check", "ck") : ""}</button>`).join("");
     }
     this._openMenuAt(anchor, menu);
-    const sel = menu.querySelector(".cur"); if (sel) sel.scrollIntoView({ block: "center" });
   }
 
   _evaCall(service, data) {
@@ -1354,7 +1353,7 @@ class MgCarDashboard extends HTMLElement {
       document.head.appendChild(st);
     }
     Object.assign(menu.style, {
-      position: "fixed", zIndex: "99999",
+      position: "fixed", zIndex: "99999", boxSizing: "border-box",
       background: "#1c2029", border: "1px solid rgba(255,255,255,.1)",
       borderRadius: "16px", padding: "6px",
       boxShadow: "0 16px 40px rgba(0,0,0,.55)",
@@ -1368,18 +1367,19 @@ class MgCarDashboard extends HTMLElement {
     let left = ar.left;
     if (left + mw > window.innerWidth - 8) left = window.innerWidth - mw - 8;
     menu.style.left = Math.max(8, left) + "px";
-    // Vertikal: unterhalb wenn Platz, sonst oberhalb
-    const spaceBelow = window.innerHeight - ar.bottom - 6;
-    const spaceAbove = ar.top - 6;
-    const mh = Math.min(menu.scrollHeight, Math.max(spaceBelow, spaceAbove, 120));
+    // Vertikal: nach unten, wenn das Menü dort ganz hinpasst (oder unten mehr Platz ist), sonst nach oben –
+    // die Höhe richtet sich nach dem Platz auf der gewählten Seite, der Rest ist im Menü scrollbar
+    const pad = 8, full = menu.scrollHeight;
+    const spaceBelow = window.innerHeight - ar.bottom - 4 - pad, spaceAbove = ar.top - 4 - pad;
+    const below = spaceBelow >= full || spaceBelow >= spaceAbove;
+    const mh = Math.max(80, Math.min(full, below ? spaceBelow : spaceAbove));
     menu.style.maxHeight = mh + "px";
     menu.style.overflowY = "auto";
-    // Immer nach unten öffnen, außer unten zu wenig Platz
-    const below = spaceBelow >= Math.min(mh, 120) || spaceBelow >= spaceAbove;
-    menu.style.top = (below ? ar.bottom + 4 : ar.top - mh - 4) + "px";
-    // Aktuellen Wert in Sicht scrollen
+    menu.style.overscrollBehavior = "contain";
+    menu.style.top = Math.max(pad, below ? ar.bottom + 4 : ar.top - 4 - mh) + "px";
+    // aktuellen Wert mittig ins Menü scrollen (nur das Menü, nicht die Seite)
     const cur = menu.querySelector(".cur");
-    if (cur) setTimeout(() => cur.scrollIntoView({ block: "nearest" }), 0);
+    if (cur) menu.scrollTop = Math.max(0, cur.offsetTop - (mh - cur.offsetHeight) / 2);
     menu.anchorEl = anchor; this._menu = menu;
     this._menuClose = (e) => { if (!e.composedPath().includes(menu) && !e.composedPath().includes(anchor)) this._closeMenu(); };
     setTimeout(() => window.addEventListener("click", this._menuClose), 0);
