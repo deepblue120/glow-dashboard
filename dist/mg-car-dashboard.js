@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=6  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=7  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.0.0";
+const VERSION = "3.1.0";
 const FONT_URL = "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap";
 
 const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
@@ -94,7 +94,9 @@ const CAR_DEFAULTS = {
       { hours: 720, label: "30 T" },
     ],
     history_hours: 24,                 // Zeitraum beim ersten Öffnen (einer der Werte oben)
-    bars_from_hours: 24,               // ab diesem Zeitraum: geladene kWh als Balken (Netz/PV), bis 7 T stündlich, darüber täglich
+    bars_from_hours: 0,                // ab diesem Zeitraum geladene kWh als Balken (Netz/PV) statt Linie (0 = immer Balken)
+    bars_daily_from_hours: 72,         // ab diesem Zeitraum Tagesbalken (darunter stündlich), 72 = ab 3 Tagen
+    bars_weekly_from_hours: 744,       // ab diesem Zeitraum Wochenbalken (Mo–So), 744 = ab 31 Tagen
     split_grid: null,                  // Netzbezug für die Aufteilung, Standard: energy.grid_import
     split_home: null,                  // Hausverbrauch inkl. Auto, Standard: energy.home
     session_days: 30,                  // „Letzte Ladung“: so viele Tage im Verlauf suchen
@@ -767,30 +769,41 @@ class MgCarDashboard extends HTMLElement {
         rows.push({ t, kwh, grid: kwh * share, pv: kwh * (1 - share), soc: S.get(t) });
       }
       rows.sort((a, b) => a.t - b.t);
-      let unit = "h";
-      if (hrs > 168) {   // über 7 Tage: Tagessummen
-        const days = new Map();
+      const unit = this._barUnit(hrs);
+      if (unit !== "h") {   // Stundenwerte zu Tages- bzw. Wochensummen zusammenfassen
+        const groups = new Map();
         for (const r of rows) {
-          const d = new Date(r.t); d.setHours(0, 0, 0, 0); const k = d.getTime();
-          const x = days.get(k) || { t: k, kwh: 0, grid: 0, pv: 0, soc: null };
+          const d = new Date(r.t); d.setHours(0, 0, 0, 0);
+          if (unit === "w") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // Wochenbeginn Montag
+          const k = d.getTime(), x = groups.get(k) || { t: k, kwh: 0, grid: 0, pv: 0, soc: null };
           x.kwh += r.kwh; x.grid += r.grid; x.pv += r.pv; if (r.soc != null) x.soc = r.soc;
-          days.set(k, x);
+          groups.set(k, x);
         }
-        rows = [...days.values()]; unit = "d";
+        rows = [...groups.values()];
       }
       return { rows, unit, split: !!(gid && this._st(gid) && hid && this._st(hid)) };
     } catch (e) { return null; }
   }
 
+  /* Balkenbreite je Zeitraum: "h" stündlich, "d" täglich, "w" wöchentlich */
+  _barUnit(hrs) {
+    const c = this._config.car;
+    return hrs >= (c.bars_weekly_from_hours ?? 744) ? "w" : hrs >= (c.bars_daily_from_hours ?? 72) ? "d" : "h";
+  }
+  _stepMs(unit) { return unit === "w" ? 7 * 86400000 : unit === "d" ? 86400000 : 3600000; }
+  _kw(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() + 3 - ((x.getDay() + 6) % 7)); const w1 = new Date(x.getFullYear(), 0, 4); return 1 + Math.round(((x - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7); }
+
   _barsSvg(H, t0, t1, W, Ht, X, soc, nowS) {
-    const B = H.bars, hrs = this._histHours(), step = B.unit === "d" ? 86400000 : 3600000;
+    const B = H.bars, hrs = this._histHours(), step = this._stepMs(B.unit);
     const rows = B.rows.filter((r) => r.t + step > t0);
-    const maxK = Math.max(B.unit === "d" ? 5 : 1, ...rows.map((r) => r.kwh));
-    const bw = Math.max(1, (step / (t1 - t0)) * W - (step / (t1 - t0) * W > 6 ? 2 : 0.4));
+    const maxK = Math.max({ h: 1, d: 5, w: 20 }[B.unit] || 1, ...rows.map((r) => r.kwh));
     const Y = (v) => Ht - (v / maxK) * (Ht - 12);
     this._barRows = rows; this._barStep = step; this._barT = [t0, t1];
     const bars = rows.map((r, i) => {
-      const x = X(r.t) + (B.unit === "d" ? 1 : 0.2), yp = Y(r.pv), yg = Y(r.pv + r.grid);
+      // angeschnittene Balken am Anfang (vor Zeitraumbeginn) und am Ende (laufende Stunde/Tag/Woche) nur so breit wie sichtbar
+      const xa = X(Math.max(r.t, t0)), xb = X(Math.min(r.t + step, t1)), full = (step / (t1 - t0)) * W;
+      const gap = full > 6 ? (B.unit === "h" ? 1 : 2) : 0.2;
+      const x = xa + gap / 2, bw = Math.max(1, xb - xa - gap), yp = Y(r.pv), yg = Y(r.pv + r.grid);
       return r.kwh < 0.005 ? "" : `<g class="bar" data-i="${i}">
         <rect x="${x.toFixed(1)}" y="${yp.toFixed(1)}" width="${bw.toFixed(1)}" height="${(Ht - yp).toFixed(1)}" class="bpv"/>
         <rect x="${x.toFixed(1)}" y="${yg.toFixed(1)}" width="${bw.toFixed(1)}" height="${(yp - yg).toFixed(1)}" class="bgr"/></g>`;
@@ -799,12 +812,21 @@ class MgCarDashboard extends HTMLElement {
     const S = (v) => (Ht - (v / 100) * (Ht - 10)).toFixed(1);
     const sp0 = soc.concat([[t1, nowS]]);
     let sp = ""; if (sp0.length > 1) { sp = `M${X(sp0[0][0]).toFixed(1)},${S(sp0[0][1])}`; for (const [t, v] of sp0.slice(1)) sp += `L${X(t).toFixed(1)},${S(v)}`; }
-    const ticks = [], tstep = hrs <= 24 ? 3 : hrs <= 72 ? 12 : hrs <= 168 ? 24 : 24 * 5;
-    const first = new Date(t0); first.setMinutes(0, 0, 0);
-    if (tstep >= 24) first.setHours(0); else first.setHours(Math.ceil(first.getHours() / tstep) * tstep);
-    for (let t = first.getTime(); t <= t1; t += tstep * 3600000) if (t >= t0) {
-      const d = new Date(t);
-      ticks.push([X(t) / W * 100, tstep >= 24 ? `${WD[d.getDay()]} ${d.getDate()}.` : tstep >= 12 && d.getHours() === 0 ? WD[d.getDay()] : `${pad(d.getHours())}:00`]);
+    const ticks = [];
+    if (B.unit === "w") {
+      const first = new Date(t0); first.setHours(0, 0, 0, 0); first.setDate(first.getDate() + ((8 - first.getDay()) % 7));   // erster Montag
+      const every = Math.max(1, Math.ceil(hrs / 168 / 8));   // höchstens etwa 8 Beschriftungen
+      for (let d = first, i = 0; d.getTime() <= t1; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7), i++)
+        if (i % every === 0) ticks.push([X(d.getTime()) / W * 100, `KW ${this._kw(d)}`]);
+    } else {
+      let tstep = hrs <= 6 ? 1 : hrs <= 24 ? 3 : hrs <= 72 ? 12 : hrs <= 168 ? 24 : 24 * 5;
+      if (B.unit === "d") tstep = Math.max(24, tstep);   // Tagesbalken: Tage beschriften
+      const first = new Date(t0); first.setMinutes(0, 0, 0);
+      if (tstep >= 24) first.setHours(0); else first.setHours(Math.ceil(first.getHours() / tstep) * tstep);
+      for (let t = first.getTime(); t <= t1; t += tstep * 3600000) if (t >= t0) {
+        const d = new Date(t);
+        ticks.push([X(t) / W * 100, tstep >= 24 ? `${WD[d.getDay()]} ${d.getDate()}.` : tstep >= 12 && d.getHours() === 0 ? WD[d.getDay()] : `${pad(d.getHours())}:00`]);
+      }
     }
     const grid = ticks.map(([x]) => `<line x1="${(x / 100) * W}" x2="${(x / 100) * W}" y1="0" y2="${Ht}" class="gl"/>`).join("");
     const sum = rows.reduce((a, r) => ({ k: a.k + r.kwh, g: a.g + r.grid, p: a.p + r.pv }), { k: 0, g: 0, p: 0 });
@@ -814,9 +836,9 @@ class MgCarDashboard extends HTMLElement {
           <line x1="${W}" x2="${W}" y1="0" y2="${Ht}" class="gnow"/><rect class="hl" x="0" y="0" width="0" height="${Ht}"/></svg>
         <div class="gax">${ticks.filter(([x]) => x < 90).map(([x, l]) => `<span class="${x < 4 ? "st" : ""}" style="left:${x}%">${l}</span>`).join("")}<span class="now" style="left:100%">jetzt</span></div>
         <div class="gtip" hidden></div>
-        <span class="gmax">${de(maxK, 1)} kWh${B.unit === "d" ? "/Tag" : "/h"}</span></div>
+        <span class="gmax">${de(maxK, 1)} kWh${{ h: "/h", d: "/Tag", w: "/Woche" }[B.unit]}</span></div>
       <div class="glg"><span class="pvl">PV/Speicher ${de(sum.p, 1)} kWh</span>${B.split ? `<span class="grl">Netz ${de(sum.g, 1)} kWh</span>` : ""}<span class="s">Ladestand ${Math.round(nowS)} %</span>
-<span class="src">${B.unit === "d" ? "Tageswerte" : "Stundenwerte"}</span></div>`;
+<span class="src">${{ h: "Stundenwerte", d: "Tageswerte", w: "Wochenwerte" }[B.unit]}</span></div>`;
   }
 
   /* Maus/Finger über den Balken: Werte anzeigen */
@@ -830,7 +852,9 @@ class MgCarDashboard extends HTMLElement {
     const row = this._barRows.find((x) => t >= x.t && t < x.t + step);
     if (!row) { tip.hidden = true; hl.setAttribute("width", 0); return; }
     const d = new Date(row.t), d2 = new Date(row.t + step);
-    const when = step >= 86400000 ? `${WD_LONG[d.getDay()]}, ${d.getDate()}. ${MON[d.getMonth()]}` : `${WD[d.getDay()]} ${d.getDate()}. ${MON[d.getMonth()]} · ${pad(d.getHours())}–${pad(d2.getHours())} Uhr`;
+    const de2 = new Date(row.t + step - 86400000);   // letzter Tag der Woche
+    const when = step >= 7 * 86400000 ? `KW ${this._kw(d)} · ${d.getDate()}. ${d.getMonth() !== de2.getMonth() ? MON[d.getMonth()] + " " : ""}– ${de2.getDate()}. ${MON[de2.getMonth()]}`
+      : step >= 86400000 ? `${WD_LONG[d.getDay()]}, ${d.getDate()}. ${MON[d.getMonth()]}` : `${WD[d.getDay()]} ${d.getDate()}. ${MON[d.getMonth()]} · ${pad(d.getHours())}–${pad(d2.getHours())} Uhr`;
     const pvp = row.kwh > 0 ? Math.round((row.pv / row.kwh) * 100) : 0;
     tip.innerHTML = `<b>${when}</b>
       <div><i class="pvd"></i>PV/Speicher<span>${de(row.pv, 2)} kWh</span></div>
@@ -838,8 +862,8 @@ class MgCarDashboard extends HTMLElement {
       <div class="tot">Geladen<span>${de(row.kwh, 2)} kWh${row.kwh > 0.005 ? ` · ${pvp} % PV` : ""}</span></div>
       ${row.soc != null ? `<div class="tsoc">Ladestand<span>${Math.round(row.soc)} %</span></div>` : ""}`;
     tip.hidden = false;
-    const W = 700, x0 = ((row.t - t0) / (t1 - t0)) * W, w = (step / (t1 - t0)) * W;
-    hl.setAttribute("x", Math.max(0, x0)); hl.setAttribute("width", Math.max(2, w));
+    const W = 700, x0 = ((Math.max(row.t, t0) - t0) / (t1 - t0)) * W, x1 = ((Math.min(row.t + step, t1) - t0) / (t1 - t0)) * W;
+    hl.setAttribute("x", x0); hl.setAttribute("width", Math.max(2, x1 - x0));
     const px = e.clientX - wrap.getBoundingClientRect().left, ww = wrap.clientWidth;
     tip.style.left = Math.min(Math.max(px - tip.offsetWidth / 2, 0), ww - tip.offsetWidth) + "px";
   }
@@ -860,7 +884,7 @@ class MgCarDashboard extends HTMLElement {
       `<button class="hseg ${r.h === hrs ? "sel" : ""}" data-act="hrange" data-h="${r.h}">${esc(r.label)}</button>`).join("");
     let body;
     if (!H) body = `<div class="empty">Lädt …</div>`;
-    else if (H.bars?.rows?.length && hrs >= (c.bars_from_hours ?? 24)) body = this._barsSvg(H, t0, t1, W, Ht, X, soc, nowS);
+    else if (H.bars?.rows?.length && hrs >= (c.bars_from_hours ?? 0)) body = this._barsSvg(H, t0, t1, W, Ht, X, soc, nowS);
     else if (!(H.data?.[c.soc]?.length) && !(H.data?.[pid]?.length)) body = `<div class="empty hdiag">Keine Verlaufsdaten für ${(H.ids || []).map((x) => `<code>${esc(x)}</code>`).join(" und ")} im Zeitraum.<br>
       Für lange Zeiträume braucht der Sensor <code>state_class: measurement</code> (Langzeitstatistik), sonst speichert der Recorder standardmäßig nur 10 Tage.</div>`;
     else {
@@ -894,7 +918,7 @@ class MgCarDashboard extends HTMLElement {
     // Summe und gemessener PV-Anteil des Zeitraums in die Kopfzeile
     let head = "";
     if (H) {
-      const rows = (H.bars?.rows || []).filter((r) => r.t + (H.bars.unit === "d" ? 86400000 : 3600000) > t0);
+      const rows = (H.bars?.rows || []).filter((r) => r.t + this._stepMs(H.bars.unit) > t0);
       let k = rows.reduce((a, r) => a + r.kwh, 0), pv = rows.reduce((a, r) => a + r.pv, 0);
       if (!rows.length && pw.length) {   // keine Statistik: Energie aus der Leistungskurve
         const pts = pw.map((x) => [x[0], x[1] * kw]).concat([[t1, nowP]]);
