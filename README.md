@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=9`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=10`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -46,12 +46,13 @@ type: custom:mg-car-dashboard
 | Letzte Ladung, Alle Ladungen | evcc-Ladelogbuch und Fremdladungen über ev_assistant |
 | Fahrtenbuch | ev_assistant |
 | Lademodus umschalten | ev_assistant (Auto / Smart / Immer / Schnell) |
+| Ladeziel, Ladestrom (einstellbar) | Selects der [evcc-Integration](https://github.com/marq24/ha-evcc) (`limitsoc`, `maxcurrent`), automatisch gefunden |
 | Kennzahlen, Ladeplan, Vollladung | ev_assistant |
 | Verlauf (geladene kWh) | „Wallbox Ladeleistung“ aus ev_assistant (ab 0.99.34), sonst das evcc-Ladelogbuch |
 | PV-Anteil im Verlauf | evcc (PV-Anteil der jeweiligen Ladesitzung) |
 
 Einstellungen mit `eva:` stehen für diese automatischen Quellen. Jeder Wert lässt sich durch eine eigene
-Entity-ID ersetzen. Nicht aus ev_assistant kommen: **Ladestrom** (`car.limit`) und das **Bild**.
+Entity-ID ersetzen. Bei mehreren Ladepunkten in der evcc-Integration wählt `car.evcc_loadpoint` (Teil der Entity-ID) den richtigen. Von Hand bleibt nur das **Bild** (`car.image`).
 Motor, Stecker und Ladeleistung gibt ev_assistant ab Version 0.99.34 weiter. Ohne evcc lässt sich der PV-Anteil
 über Netzbezug und Hausverbrauch (Leistung) berechnen: `energy.grid_import`, `energy.home`.
 Mit `debug: true` zeigt die Browser-Konsole, welche Quelle für welchen Wert verwendet wird.
@@ -80,12 +81,9 @@ car:
   image: /local/auto.png
   status: binary_sensor.e_c3_motor
   cable: binary_sensor.warp3_2ee3_cable
-  limit: number.wallbox_ladestrom
   # optional: evcc-Modus über die evcc-Integration statt über ev_assistant
   # mode: select.evcc_warp3_mode
   # always: select.evcc_warp3_always_charge
-  # evcc:
-  #   limit_soc: select.evcc_warp3_limit_soc   # Ladeziel auswählbar
 ```
 
 ## Konfiguration Auto-Karte
@@ -135,4 +133,4 @@ car:
 | Version | Datei |
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.2.1  | mg-car-dashboard.js (eigenständig) |
+| 3.2.2  | mg-car-dashboard.js (eigenständig) |

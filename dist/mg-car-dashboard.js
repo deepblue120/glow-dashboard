@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=9  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=10  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.2.1";
+const VERSION = "3.2.2";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -64,7 +64,7 @@ const CAR_DEFAULTS = {
     mode: "",                         // evcc-Lademodus als select-Entität (z. B. aus der evcc-Integration)
     always: "",                       // „Immer laden“ als select-Entität (nur zusammen mit mode)
     manual_mode: "",                  // eigene Vorgabe (input_select automatisch / manuell)
-    limit: "",                        // Ladestrom als number-Entität (A), z. B. aus der evcc-Integration
+    limit: "eva:max_current",         // Ladestrom (A): automatisch aus der evcc-Integration (Select „maxcurrent“), oder eigene number-/select-Entität
 
     // --- evcc (Ladepunkt) – Standard: Live-Werte aus ev_assistant ---
     evcc: {
@@ -77,12 +77,13 @@ const CAR_DEFAULTS = {
       duration: "eva:duration",
       remaining: "",                  // Restladezeit (Sensor)
       finish: "",                     // voraussichtliches Ladeende (Sensor mit Zeitstempel)
-      limit_soc: "eva:limit_soc",     // Ladeziel; mit select-/number-Entität auch auswählbar
+      limit_soc: "eva:limit_soc",     // Ladeziel: automatisch das Select der evcc-Integration (auswählbar), sonst evcc-Live-Wert (nur Anzeige)
       min_soc: "eva:min_soc",         // Markierung „bis hier immer laden“
       solar_total: "eva:solar_total",
       last_charge: "eva:last_charge",
     },
     evcc_vehicle: "",                // nur Ladungen dieses evcc-Fahrzeugs in „Alle Ladungen“ (leer = aus ev_assistant)
+    evcc_loadpoint: "",              // bei mehreren Ladepunkten in der evcc-Integration: Teil der Entity-ID, z. B. "warp3"
 
     // --- ev_assistant ---
     // Die Entitäten werden automatisch gefunden. Einzelne lassen sich hier fest vorgeben, z. B.
@@ -414,8 +415,8 @@ class MgCarDashboard extends HTMLElement {
     const el = this.shadowRoot.getElementById("mgmt"); if (!el) return;
     if (this.shadowRoot.activeElement?.classList?.contains("pin")) return;   // während der Eingabe nicht neu zeichnen
     const c = this._config.car, ev = c.evcc || {}, E = this._eva();
-    const step = (lbl, ic, id, unit) => {
-      const st = this._st(id); if (!st) return "";
+    const step = (lbl, ic, cfgId, unit) => {
+      const id = this._real(cfgId), st = this._st(id); if (!st) return "";   // nur eine echte Entität lässt sich einstellen
       const a = st.attributes, pend = this._pendingNum?.[id], v = pend != null ? pend : parseFloat(st.state), u = unit ?? a.unit_of_measurement ?? "";
       return `<div class="mstep"><span class="msl">${icon(ic)}${lbl}</span>
         <div class="tgt"><button class="tb" data-act="mnum" data-entity="${esc(id)}" data-d="-1" aria-label="weniger">−</button>
@@ -497,7 +498,7 @@ class MgCarDashboard extends HTMLElement {
     const rec = this._st(E.charge_before_pv_recommended);
     const isAuto = evaMode ? evaMode.cur === "auto" : auto;
     const evccNow = evaMode?.evcc ? `<small>evcc: ${esc(EVA_MODES.find((m) => m.v === evaMode.evcc)?.label || (evaMode.evcc === "off" ? "Aus" : evaMode.evcc))}</small>` : "";
-    const ladestrom = step("Ladestrom", "mdi:speedometer", c.limit);
+    const ladestrom = step("Ladestrom", "mdi:speedometer", c.limit, this._real(c.limit)?.startsWith("select.") ? "A" : undefined);
     el.innerHTML = this._hd("Lademanagement", manual || evaMode ? (isAuto ? `<span class="mauto">${icon("mdi:robot-outline")}Automatik</span>` : `<span class="mman">${icon("mdi:hand-back-right-outline")}Manuell</span>`) : "") + `
       ${modeTiles ? `<div class="mgrp"><span class="mgl">${manual || evaMode ? "Lademodus" : "evcc-Modus"} ${evccNow}</span>${modeTiles}</div>` : ""}
       ${ladestrom ? `<div class="msteps">${ladestrom}</div>` : ""}
@@ -514,7 +515,7 @@ class MgCarDashboard extends HTMLElement {
       const limSt = this._st(ev.limit_soc);
       if (!limSt) this._log("limit_soc", ev.limit_soc, "nicht in hass.states gefunden");
       const v = limSt?.state, pick = !!this._real(ev.limit_soc);   // nur eine echte select-/number-Entität ist auswählbar
-      if (limSt) limBtn = `<button class="mbtn lim ${pick ? "" : "ro"}" ${pick ? `data-act="limmenu" data-entity="${esc(ev.limit_soc)}"` : `title="Ladeziel aus evcc"`}>
+      if (limSt) limBtn = `<button class="mbtn lim ${pick ? "" : "ro"}" ${pick ? `data-act="limmenu" data-entity="${esc(this._real(ev.limit_soc))}"` : `title="Ladeziel aus evcc"`}>
         ${icon("mdi:battery-check-outline")}<div class="mtx"><b>${v != null && !OFFLINE_HD.includes(v) ? esc(String(Math.round(parseFloat(v)) || v).replace(/ ?%$/, "")) + " %" : "–"}</b><span>Ladeziel</span></div>${pick ? icon("mdi:chevron-down", "mchv") : ""}</button>`;
     }
     // Vollladung als Knopf
@@ -541,7 +542,7 @@ class MgCarDashboard extends HTMLElement {
     const opts = a.options || [];
     const menu = document.createElement("div"); menu.className = "menu limm";
     if (opts.length) {
-      menu.innerHTML = opts.map((v) => `<button class="mg-menu-item mi ${String(v) === String(cur) ? "cur" : ""}" data-act="limset" data-entity="${esc(id)}" data-v="${esc(v)}"><span>${esc(v)}</span>${String(v) === String(cur) ? icon("mdi:check", "ck") : ""}</button>`).join("");
+      menu.innerHTML = opts.map((v) => `<button class="mg-menu-item mi ${String(v) === String(cur) ? "cur" : ""}" data-act="limset" data-entity="${esc(id)}" data-v="${esc(v)}"><span>${isNaN(Number(v)) ? esc(v) : Number(v) === 0 ? "–" : `${esc(v)} %`}</span>${String(v) === String(cur) ? icon("mdi:check", "ck") : ""}</button>`).join("");
     } else {
       const stp = Number(a.step) || 5, mn = Number(a.min) || 20, mx = Number(a.max) || 100;
       let numOpts = []; for (let v = mn; v <= mx; v += stp) numOpts.push(v);
@@ -560,15 +561,26 @@ class MgCarDashboard extends HTMLElement {
 
   _mnum(el) {
     const id = el.dataset.entity, st = this._st(id); if (!st) return;
-    const a = st.attributes, stp = Number(a.step) || 1;
+    const a = st.attributes, stp = Number(a.step) || 1, dom = id.split(".")[0], d = Number(el.dataset.d);
     this._pendingNum = this._pendingNum || {}; this._numT = this._numT || {};
     const cur = this._pendingNum[id] ?? parseFloat(st.state);
-    let v = Math.round((cur + Number(el.dataset.d) * stp) / stp) * stp;
-    if (a.min != null) v = Math.max(Number(a.min), v); if (a.max != null) v = Math.min(Number(a.max), v);
+    let v;
+    if (dom === "select" || dom === "input_select") {   // Auswahlliste (z. B. Ladestrom der evcc-Integration): nächster Wert
+      const opts = (a.options || []).map(Number).filter((x) => !isNaN(x)).sort((x, y) => x - y);
+      if (!opts.length) return;
+      const i = opts.findIndex((x) => x >= cur);
+      v = opts[Math.max(0, Math.min(opts.length - 1, (i < 0 ? opts.length - 1 : i) + (opts[i] === cur || i < 0 ? d : d > 0 ? 0 : -1)))];
+    } else {
+      v = Math.round((cur + d * stp) / stp) * stp;
+      if (a.min != null) v = Math.max(Number(a.min), v); if (a.max != null) v = Math.min(Number(a.max), v);
+    }
     this._pendingNum[id] = v;
     clearTimeout(this._numT[id]);
     this._numT[id] = setTimeout(() => {
-      this._hass.callService(id.split(".")[0], "set_value", { entity_id: id, value: v });
+      if (dom === "select" || dom === "input_select") {
+        const opt = (a.options || []).find((o) => Number(o) === v);
+        if (opt != null) this._hass.callService(dom, "select_option", { entity_id: id, option: opt });
+      } else this._hass.callService(dom, "set_value", { entity_id: id, value: v });
       setTimeout(() => { delete this._pendingNum[id]; this._render_mgmt(); }, 1500);
     }, 700);
     this._render_mgmt();
@@ -1127,8 +1139,26 @@ class MgCarDashboard extends HTMLElement {
   _resolve(id) {
     const k = id.slice(4), P = this._evaPanel?.entities || {}, E = this._eva();
     const real = { soc: P.soc_entity, range: E.range_estimate, motor: P.motor_entity, plug: P.plug_entity || P.wallbox_connected_entity,
-      charging: P.wallbox_charging_entity, charge_power: P.home_entity || P.power_entity }[k];
+      charging: P.wallbox_charging_entity, charge_power: P.home_entity || P.power_entity,
+      limit_soc: this._evccEnt("limitsoc"), max_current: this._evccEnt("maxcurrent") }[k];
     return real && this._hass?.states[real] ? real : null;
+  }
+
+  // Entität der evcc-Integration (marq24/ha-evcc, Plattform "evcc_intg") anhand ihres translation_key,
+  // z. B. "limitsoc" (Ladeziel) oder "maxcurrent" (Ladestrom). Select vor number, bei mehreren
+  // Ladepunkten entscheidet car.evcc_loadpoint (Teil der Entity-ID).
+  _evccEnt(key) {
+    const reg = this._hass?.entities;
+    if (!reg) return null;
+    if (this._evccCache?.ref !== reg) {
+      const m = {};
+      for (const e of Object.values(reg)) if (e.platform === "evcc_intg" && e.translation_key && /^(select|number)\./.test(e.entity_id)) (m[e.translation_key] ||= []).push(e.entity_id);
+      this._evccCache = { ref: reg, m };
+    }
+    const lp = String(this._config.car.evcc_loadpoint || "").toLowerCase();
+    const l = (this._evccCache.m[key] || []).filter((id) => this._hass.states[id] && (!lp || id.includes(lp)))
+      .sort((a, b) => (a.startsWith("select.") ? 0 : 1) - (b.startsWith("select.") ? 0 : 1) || a.localeCompare(b));
+    return l[0] || null;
   }
 
   // echte Entität (für Verlauf/Statistik und Detailansicht) oder null
@@ -1316,6 +1346,7 @@ class MgCarDashboard extends HTMLElement {
     // An body anhängen damit kein overflow:hidden abschneidet
     // Styles inline setzen da das Element außerhalb des Shadow-DOM ist
     document.body.appendChild(menu);
+    menu.addEventListener("click", (e) => this._click(e));   // liegt außerhalb der Karte: Klicks selbst weiterreichen
     if (!document.getElementById("mg-menu-styles")) {
       const st = document.createElement("style");
       st.id = "mg-menu-styles";
