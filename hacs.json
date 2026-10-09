@@ -1,0 +1,6 @@
+{
+  "name": "Glow Dashboard",
+  "filename": "mg-car-dashboard.js",
+  "homeassistant": "2024.1.0",
+  "render_readme": true
+}

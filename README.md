@@ -6,49 +6,37 @@ Custom Lovelace cards for Home Assistant — dark, modern, card-based.
 
 | Karte | Beschreibung |
 |-------|-------------|
-| `custom:mg-home-dashboard` | Startseite mit Energie, Kalender, Wetter |
 | `custom:mg-car-dashboard` | Auto-Seite mit evcc, ev_assistant, Fahrtenbuch |
-| `custom:mg-climate-dashboard` | Klima & Heizung |
-| `custom:mg-rooms-dashboard` | Räume mit Detailansicht |
-| `custom:mg-school-card` | Schulstundenplan |
 
 ## Installation
 
-1. Alle `.js`-Dateien aus dem Ordner `dist/` nach `/config/www/glow-dashboard/` kopieren.
-2. In Home Assistant: **Einstellungen → Dashboards → Ressourcen** → folgende Einträge hinzufügen (Typ: **JavaScript**):
+### Über HACS (empfohlen)
 
-```
-/local/glow-dashboard/mg-home-dashboard.js
-/local/glow-dashboard/mg-car-dashboard.js
-/local/glow-dashboard/mg-climate-dashboard.js
-/local/glow-dashboard/mg-rooms-dashboard.js
-/local/glow-dashboard/mg-school-card.js
-```
+1. **HACS → ⋮ → Benutzerdefinierte Repositories**
+2. Repository `https://github.com/deepblue120/glow-dashboard`, Typ **Dashboard** → **Hinzufügen**
+3. „Glow Dashboard“ in HACS öffnen → **Herunterladen**
+4. Browser neu laden (Strg+F5)
+
+HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt die Ressource
+`/hacsfiles/glow-dashboard/mg-car-dashboard.js` automatisch ein (bei Dashboards im YAML-Modus von Hand eintragen).
+
+> **Wichtig:** Bei jedem Update über HACS wird die Datei ersetzt. Eigene Sensoren und Einstellungen
+> deshalb nicht in der Datei ändern, sondern per YAML in der Kartenkonfiguration angeben (siehe unten).
+
+### Manuell
+
+1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
+2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
+   `/local/glow-dashboard/mg-car-dashboard.js?v=7`
+   (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## YAML-Beispiel
 
 ```yaml
-# Startseite (Panel-Ansicht)
-type: custom:mg-home-dashboard
-weather:
-  entity: weather.forecast_home
-
-# Auto-Seite
 type: custom:mg-car-dashboard
-# Sensor-IDs können in mg-car-dashboard.js unter CAR_DEFAULTS angepasst werden
-# oder hier per YAML überschrieben werden:
 car:
   soc: sensor.e_c3_batterie
   range: sensor.e_c3_reichweite
-
-# Klima
-type: custom:mg-climate-dashboard
-
-# Räume
-type: custom:mg-rooms-dashboard
-
-# Schule
-type: custom:mg-school-card
 ```
 
 ## Konfiguration Auto-Karte
