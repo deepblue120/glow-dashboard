@@ -102,9 +102,9 @@ const CAR_DEFAULTS = {
     ev_assistant: {},
     ev_assistant_entry: "",          // config_entry_id von ev_assistant (leer = automatisch, bei mehreren Fahrzeugen das erste)
     stats: ["vehicle_avg_consumption", "odo", "cost_year", "savings"],   // Kennzahlen in der Auto-Kachel
-    // Leasing-Kachel: "auto" = alle Leasing-Werte aus ev_assistant (Schlüssel mit „leasing“), oder eine Liste
-    // von ev_assistant-Schlüsseln / Entity-IDs in der gewünschten Reihenfolge, [] = Kachel aus
-    leasing: "auto",
+    // Leasing-Kilometerbudget: Sensor „km vor Rücklauf“ aus ev_assistant (alle Vertrags- und Hochrechnungswerte
+    // stehen in seinen Attributen). Eigene Entity-ID möglich, "" = Kachel aus. Ohne Leasing-Vertrag bleibt sie ausgeblendet.
+    leasing: "eva:leasing_km_vor_ruecklauf",
 
     // --- Fahrtenbuch ---
     trips: "eva:trips",                   // Fahrtenbuch aus ev_assistant (oder ein Sensor mit Attribut "trips")
@@ -702,49 +702,68 @@ class MgCarDashboard extends HTMLElement {
 `;
   }
 
-  /* --- Leasing (ev_assistant) --- */
-  _leaseIds() {
-    const cfg = this._config.car.leasing, E = this._eva();
-    if (Array.isArray(cfg)) return cfg.map((k) => E[k] || (String(k).includes(".") ? k : null)).filter((id) => id && this._st(id));
-    if (cfg !== "auto") return [];
-    return Object.keys(E).filter((k) => /leas/i.test(k)).sort().map((k) => E[k]).filter((id) => this._st(id));
-  }
-  _leaseLabel(id) {
-    const s = this._st(id), reg = this._hass?.entities?.[id], dev = reg && this._hass?.devices?.[reg.device_id];
-    let n = reg?.name || s?.attributes?.friendly_name || id;
-    for (const pre of [dev?.name_by_user, dev?.name, this._evaPanel?.name]) if (pre && n.startsWith(pre + " ")) n = n.slice(pre.length + 1);
-    n = n.replace(/^leasing[\s:-]*/i, "").trim();
-    return n ? n.charAt(0).toUpperCase() + n.slice(1) : "Leasing";
-  }
-  _leaseVal(id) {
-    const s = this._st(id); if (!s || OFFLINE_HD.includes(s.state)) return null;
-    const dc = s.attributes.device_class, dom = id.split(".")[0];
-    if (dom === "binary_sensor" || ["on", "off"].includes(s.state)) return { v: s.state === "on" ? "ja" : "nein", u: "", on: s.state === "on" };
-    if (dc === "date" || dc === "timestamp" || /^\d{4}-\d{2}-\d{2}/.test(s.state)) {
-      const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(s.state) ? s.state + "T00:00" : s.state);
-      if (!isNaN(d)) return { v: `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`, u: "", date: d };
-    }
-    return this._fmt(id, (s.attributes.unit_of_measurement || "").toLowerCase() === "km" ? 0 : undefined);
-  }
+  /* --- Leasing-Kilometerbudget (ev_assistant, Sensor „km vor Rücklauf“ mit allen Werten als Attribute) --- */
   _render_lease() {
     const el = this.shadowRoot.getElementById("lease"); if (!el) return;
-    const ids = this._leaseIds();
-    el.hidden = !ids.length;
-    if (!ids.length) { if (el._html) { el.innerHTML = ""; el._html = ""; } return; }
-    const items = ids.map((id) => ({ id, lbl: this._leaseLabel(id), f: this._leaseVal(id), st: this._st(id) })).filter((x) => x.f);
-    // Fortschritt: erster Prozentwert (z. B. verbrauchtes km-Kontingent oder abgelaufene Laufzeit) als Balken
-    const pct = items.find((x) => x.st.attributes.unit_of_measurement === "%" && !isNaN(parseFloat(x.st.state)));
-    const pv = pct ? Math.max(0, Math.min(100, parseFloat(pct.st.state))) : null;
-    const warn = (x) => (x.f.on && /warn|über|ueber|ueberschr|exceed|over|mehr/i.test(x.id + x.lbl)) || (x.f.v && /^-/.test(String(x.f.v)) && /rest|verbleib|remaining/i.test(x.id + x.lbl));
-    const tiles = items.filter((x) => x !== pct).map((x) => {
-      const long = !x.f.u && String(x.f.v).length > 14;
-      return `<button class="cstat ${warn(x) ? "warn" : ""} ${long ? "wide" : ""}" data-act="more" data-entity="${esc(x.id)}" title="${esc(x.st.attributes.friendly_name || x.id)}">
-        <span>${esc(x.lbl)}</span><b>${esc(x.f.v)}${x.f.u ? `<small>${esc(x.f.u)}</small>` : ""}</b></button>`;
-    }).join("");
-    const html = this._hd("Leasing", pct ? `${de(pv, 0)} %` : "", null, pv != null && pv > 100 ? "warn" : "") +
-      (pct ? `<button class="lbar" data-act="more" data-entity="${esc(pct.id)}" title="${esc(pct.lbl)}"><span class="lbt">${esc(pct.lbl)}</span>
-        <span class="bar"><span style="width:${pv}%" class="${pv >= 100 ? "over" : pv >= 90 ? "hi" : ""}"></span></span></button>` : "") +
-      `<div class="cstats lstats">${tiles}</div>`;
+    const cfg = this._config.car.leasing;
+    const id = !cfg ? null : String(cfg).startsWith("eva:") ? this._eva()[String(cfg).slice(4)] : cfg;
+    const st = this._st(id), a = st?.attributes || {}, km = parseFloat(st?.state);
+    el.hidden = !st || OFFLINE_HD.includes(st.state) || isNaN(km);   // kein Leasing-Vertrag eingerichtet
+    if (el.hidden) { if (el._html) { el.innerHTML = ""; el._html = ""; } return; }
+    const n = (v) => typeof v === "number" && !isNaN(v);
+    const f = (v, d = 0) => (n(v) ? de(v, d) : "–");
+    const sg = (v, d = 0) => (n(v) ? `${v > 0 ? "+" : ""}${de(v, d)}` : "–");
+    const dt = (iso) => { const d = iso ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso + "T00:00" : iso) : null; return d && !isNaN(d) ? `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}` : esc(iso || "–"); };
+    const STATUS = { im_budget: ["Im Budget", "var(--green)"], knapp: ["Knapp", "var(--orange)"], ueber: ["Über Budget", "var(--red)"] };
+    const [stTxt, stCol] = STATUS[a.status] || ["", "var(--green)"];
+
+    // Kennzahlen
+    const kpi = (lbl, v, u, cls = "") => `<div class="cstat ${cls}"><span>${lbl}</span><b>${v}${u ? `<small>${u}</small>` : ""}</b></div>`;
+    const kpis = [
+      kpi("vor Rücklauf", sg(km, 1), "km", km > 0 ? "neg" : "pos"),
+      kpi("Tage bis Ende", f(a.verbleibende_tage), ""),
+      kpi("Restbudget", f(a.verbleibendes_tagesbudget_km, 1), "km/Tag", n(a.verbleibendes_tagesbudget_km) && a.verbleibendes_tagesbudget_km < 0 ? "neg" : ""),
+      kpi("Noch erlaubt", f(a.resterlaubte_km), "km", n(a.resterlaubte_km) && a.resterlaubte_km < 0 ? "neg" : ""),
+    ].join("");
+
+    // Balken: gefahren von inklusive, Markierung = Soll-Stand heute
+    const inkl = a.vertrag_inkl_km, gef = a.gefahrene_vertrags_km, soll = a.soll_km_bis_heute;
+    const pct = n(inkl) && inkl > 0 && n(gef) ? Math.max(0, Math.min(100, gef / inkl * 100)) : null;
+    const mk = n(inkl) && inkl > 0 && n(soll) ? Math.max(0, Math.min(100, soll / inkl * 100)) : null;
+    const bar = pct == null ? "" : `<div class="lscap"><span>${f(gef)} von ${f(inkl)} km</span><b>${de(gef / inkl * 100, 1)} %</b></div>
+      <div class="bar">${mk != null ? `<i class="bm soll" style="left:${mk}%" title="Soll heute ${f(soll)} km"></i>` : ""}<span style="width:${pct}%;background:${stCol};box-shadow:none"></span></div>
+      <div class="lsnote">Strich = Soll-Stand heute (${f(soll)} km)</div>`;
+
+    // Vertrag
+    const row = (l, v, u = "") => `<div class="lsr"><span>${l}</span><b>${v}${u ? `<small> ${u}</small>` : ""}</b></div>`;
+    const vertrag = [
+      row("Laufzeit", `${dt(a.vertrag_start_datum)} – ${dt(a.vertrag_end_datum)}`),
+      n(a.vergangene_tage) && n(a.vertrag_tage) ? row("Vertragstag", `${f(a.vergangene_tage)} von ${f(a.vertrag_tage)}`) : "",
+      row("Inklusive", f(inkl), "km"),
+      n(a.vertrag_start_km) && a.vertrag_start_km > 0 ? row("km-Stand bei Beginn", f(a.vertrag_start_km), "km") : "",
+      n(a.toleranz_mehr_km) || n(a.toleranz_minder_km) ? row("Toleranz Mehr / Minder", `${f(a.toleranz_mehr_km)} / ${f(a.toleranz_minder_km)}`, "km") : "",
+      n(a.preis_mehr_km) || n(a.preis_minder_km) ? row("Preis Mehr / Minder", `${f(a.preis_mehr_km, 2)} / ${f(a.preis_minder_km, 2)}`, "€/km") : "",
+    ].join("");
+
+    // Hochrechnung aufs Vertragsende: linear (seit Beginn) und rollierend (letzte 30 Fahrtage)
+    const L = a.linear, R = a.rollierend;
+    const col = (p, k, d = 0, sign) => (p && n(p[k]) ? (sign ? sg(p[k], d) : f(p[k], d)) : "–");
+    const eur = (p) => (!p ? "–" : n(p.mehrkosten_eur) ? `<span class="neg">${de(p.mehrkosten_eur, 2)} €</span>` : n(p.gutschrift_eur) ? `<span class="pos">−${de(p.gutschrift_eur, 2)} €</span>` : "–");
+    const hasEur = [L, R].some((p) => p && (n(p.mehrkosten_eur) || n(p.gutschrift_eur)));
+    const eurLbl = [L, R].some((p) => p && n(p.gutschrift_eur)) && ![L, R].some((p) => p && n(p.mehrkosten_eur)) ? "Gutschrift" : "Mehrkosten";
+    const proj = L || R ? `<div class="lsproj">
+        <span></span><span class="h">Linear</span><span class="h">30 Fahrtage</span>
+        <span>Ø km/Tag</span><b>${col(L, "tempo_km_pro_tag", 1)}</b><b>${col(R, "tempo_km_pro_tag", 1)}</b>
+        <span>Endstand</span><b>${col(L, "erwartete_end_km")}</b><b>${col(R, "erwartete_end_km")}</b>
+        <span>Mehr/Minder-km</span><b>${col(L, "erwartete_mehr_bzw_minder_km", 0, true)}</b><b>${col(R, "erwartete_mehr_bzw_minder_km", 0, true)}</b>
+        ${hasEur ? `<span>${eurLbl}${[L, R].some((p) => p?.innerhalb_toleranz != null) ? " <small>n. Toleranz</small>" : ""}</span><b>${eur(L)}</b><b>${eur(R)}</b>` : ""}
+      </div>` : "";
+
+    const html = this._hd("Leasing", stTxt ? `<span style="color:${stCol};font-weight:700">${stTxt}</span>` : "", id) + `
+      <div class="cstats lstats">${kpis}</div>
+      ${bar}
+      <div class="lsgrp"><span class="mgl">Vertrag</span><div class="lsrows">${vertrag}</div></div>
+      ${proj ? `<div class="lsgrp"><span class="mgl">Hochrechnung Vertragsende</span>${proj}</div>` : ""}`;
     if (el._html !== html) { el.innerHTML = html; el._html = html; }
   }
 
@@ -1733,17 +1752,23 @@ ha-icon{--mdc-icon-size:22px;display:inline-flex}
 .cstat span{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cstat b{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .cstat small{font-size:11.5px;color:var(--muted);font-weight:500;margin-left:3px}
-#lease .lstats{margin:0}
-#lease .cstat.wide{grid-column:1 / -1}
-#lease .cstat.wide b{white-space:normal;font-size:15px}
-#lease .cstat.warn{border-color:rgba(248,113,113,.45)}
-#lease .cstat.warn b{color:var(--red)}
-#lease .lbl.warn{color:var(--red)}
-#lease .lbar{display:flex;flex-direction:column;gap:6px;width:100%;margin:0 0 12px}
-#lease .lbt{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
-#lease .bar{margin:0}
-#lease .bar span.hi{background:var(--gold)}
-#lease .bar span.over{background:var(--red)}
+#lease .lstats{grid-template-columns:repeat(2,minmax(0,1fr));margin:0 0 14px}
+#lease .neg,#lease .cstat.neg b{color:var(--red)}
+#lease .pos,#lease .cstat.pos b{color:var(--green)}
+#lease .lscap{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+#lease .lscap b{color:var(--text);font-variant-numeric:tabular-nums}
+#lease .bar{margin:8px 0 6px;position:relative;overflow:visible}
+#lease .bm.soll{background:#fff}
+#lease .lsnote{font-size:11.5px;color:var(--dim);margin-bottom:14px}
+#lease .lsgrp{margin-top:12px}
+#lease .lsgrp .mgl{display:block;margin-bottom:8px}
+#lease .lsrows{display:flex;flex-direction:column;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);padding:4px 14px}
+#lease .lsr{display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:13.5px;color:var(--muted)}
+#lease .lsr+.lsr{border-top:1px solid var(--line)}
+#lease .lsr b,#lease .lsproj b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+#lease .lsr small,#lease .lsproj small{color:var(--muted);font-weight:500}
+#lease .lsproj{display:grid;grid-template-columns:1fr auto auto;column-gap:16px;row-gap:7px;align-items:baseline;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);padding:10px 14px;font-size:13.5px;color:var(--muted)}
+#lease .lsproj .h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;text-align:right}
 .wrap.compact .cline{font-size:13px;margin:-2px 0 10px}
 .wrap.compact .cstats{margin-bottom:10px;gap:6px}
 .wrap.compact .cstat{padding:6px 9px;border-radius:12px}

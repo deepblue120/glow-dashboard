@@ -48,7 +48,7 @@ type: custom:mg-car-dashboard
 | Lademodus umschalten | ev_assistant (Auto / Smart / Immer / Schnell) |
 | Ladeziel (einstellbar) | Select der [evcc-Integration](https://github.com/marq24/ha-evcc) (`limitsoc`), automatisch gefunden |
 | Kennzahlen, Ladeplan, Vollladung | ev_assistant |
-| Leasing | alle Leasing-Werte aus ev_assistant (automatisch gefunden) |
+| Leasing-Kilometerbudget | ev_assistant „km vor Rücklauf“ (Vertrag, Soll/Ist, Hochrechnungen aus den Attributen) |
 | Verlauf (geladene kWh) | „Wallbox Ladeleistung“ aus ev_assistant (ab 0.99.34), sonst das evcc-Ladelogbuch |
 | PV-Anteil im Verlauf | evcc (PV-Anteil der jeweiligen Ladesitzung) |
 
@@ -133,7 +133,7 @@ car:
 | `car.ev_assistant` | einzelne ev_assistant-Entitäten fest vorgeben (sonst automatisch gefunden) |
 | `car.ev_assistant_entry` | config_entry_id von ev_assistant (sonst automatisch) |
 | `car.stats` | Kennzahlen in der Auto-Kachel (ev_assistant-Schlüssel oder Entity-IDs) |
-| `car.leasing` | Leasing-Kachel: `auto` (Standard, alle ev_assistant-Werte mit „leasing“ im Schlüssel), eine Liste von Schlüsseln/Entity-IDs in fester Reihenfolge, oder `[]` = aus. Ein Prozentwert erscheint als Balken |
+| `car.leasing` | Leasing-Kachel: Sensor „km vor Rücklauf“ aus ev_assistant (Standard), eigene Entity-ID oder `""` = aus. Ohne Leasing-Vertrag in ev_assistant automatisch ausgeblendet |
 | `car.trips` | Fahrtenbuch-Sensor (Attribut `trips`) |
 | `car.trips_visible` | Fahrten in der Kachel, wenn die Seite nicht an die Fensterhöhe angepasst ist (sonst so viele, wie hineinpassen) |
 | `car.trips_max` | Fahrten im Fenster „Alle Fahrten“ |
