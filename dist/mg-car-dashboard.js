@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=14  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=15  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.3.2";
+const VERSION = "3.3.4";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -726,44 +726,20 @@ class MgCarDashboard extends HTMLElement {
       kpi("Noch erlaubt", f(a.resterlaubte_km), "km", n(a.resterlaubte_km) && a.resterlaubte_km < 0 ? "neg" : ""),
     ].join("");
 
-    // Balken: gefahren von inklusive, Markierung = Soll-Stand heute
+    // Balken: gefahren von inklusive; Skala bis Ende der Mehr-km-Toleranz, damit harte Grenze und Toleranzband sichtbar sind
     const inkl = a.vertrag_inkl_km, gef = a.gefahrene_vertrags_km, soll = a.soll_km_bis_heute;
-    const pct = n(inkl) && inkl > 0 && n(gef) ? Math.max(0, Math.min(100, gef / inkl * 100)) : null;
-    const mk = n(inkl) && inkl > 0 && n(soll) ? Math.max(0, Math.min(100, soll / inkl * 100)) : null;
-    const bar = pct == null ? "" : `<div class="lscap"><span>${f(gef)} von ${f(inkl)} km</span><b>${de(gef / inkl * 100, 1)} %</b></div>
-      <div class="bar">${mk != null ? `<i class="bm soll" style="left:${mk}%" title="Soll heute ${f(soll)} km"></i>` : ""}<span style="width:${pct}%;background:${stCol};box-shadow:none"></span></div>
-      <div class="lsnote">Strich = Soll-Stand heute (${f(soll)} km)</div>`;
-
-    // Vertrag
-    const row = (l, v, u = "") => `<div class="lsr"><span>${l}</span><b>${v}${u ? `<small> ${u}</small>` : ""}</b></div>`;
-    const vertrag = [
-      row("Laufzeit", `${dt(a.vertrag_start_datum)} – ${dt(a.vertrag_end_datum)}`),
-      n(a.vergangene_tage) && n(a.vertrag_tage) ? row("Vertragstag", `${f(a.vergangene_tage)} von ${f(a.vertrag_tage)}`) : "",
-      row("Inklusive", f(inkl), "km"),
-      n(a.vertrag_start_km) && a.vertrag_start_km > 0 ? row("km-Stand bei Beginn", f(a.vertrag_start_km), "km") : "",
-      n(a.toleranz_mehr_km) || n(a.toleranz_minder_km) ? row("Toleranz Mehr / Minder", `${f(a.toleranz_mehr_km)} / ${f(a.toleranz_minder_km)}`, "km") : "",
-      n(a.preis_mehr_km) || n(a.preis_minder_km) ? row("Preis Mehr / Minder", `${f(a.preis_mehr_km, 2)} / ${f(a.preis_minder_km, 2)}`, "€/km") : "",
-    ].join("");
-
-    // Hochrechnung aufs Vertragsende: linear (seit Beginn) und rollierend (letzte 30 Fahrtage)
-    const L = a.linear, R = a.rollierend;
-    const col = (p, k, d = 0, sign) => (p && n(p[k]) ? (sign ? sg(p[k], d) : f(p[k], d)) : "–");
-    const eur = (p) => (!p ? "–" : n(p.mehrkosten_eur) ? `<span class="neg">${de(p.mehrkosten_eur, 2)} €</span>` : n(p.gutschrift_eur) ? `<span class="pos">−${de(p.gutschrift_eur, 2)} €</span>` : "–");
-    const hasEur = [L, R].some((p) => p && (n(p.mehrkosten_eur) || n(p.gutschrift_eur)));
-    const eurLbl = [L, R].some((p) => p && n(p.gutschrift_eur)) && ![L, R].some((p) => p && n(p.mehrkosten_eur)) ? "Gutschrift" : "Mehrkosten";
-    const proj = L || R ? `<div class="lsproj">
-        <span></span><span class="h">Linear</span><span class="h">30 Fahrtage</span>
-        <span>Ø km/Tag</span><b>${col(L, "tempo_km_pro_tag", 1)}</b><b>${col(R, "tempo_km_pro_tag", 1)}</b>
-        <span>Endstand</span><b>${col(L, "erwartete_end_km")}</b><b>${col(R, "erwartete_end_km")}</b>
-        <span>Mehr/Minder-km</span><b>${col(L, "erwartete_mehr_bzw_minder_km", 0, true)}</b><b>${col(R, "erwartete_mehr_bzw_minder_km", 0, true)}</b>
-        ${hasEur ? `<span>${eurLbl}${[L, R].some((p) => p?.innerhalb_toleranz != null) ? " <small>n. Toleranz</small>" : ""}</span><b>${eur(L)}</b><b>${eur(R)}</b>` : ""}
-      </div>` : "";
+    const tM = n(a.toleranz_mehr_km) ? a.toleranz_mehr_km : 0, tm = n(a.toleranz_minder_km) ? a.toleranz_minder_km : 0;
+    const max = n(inkl) && inkl > 0 ? inkl + tM : 0, pos = (v) => Math.max(0, Math.min(100, v / max * 100));
+    const tol = tM || tm ? (tM === tm ? `±${f(tM)}` : `−${f(tm)} / +${f(tM)}`) : "";
+    const bar = !max || !n(gef) ? "" : `<div class="lscap"><span>${f(gef)} von ${f(inkl)} km</span><b>${de(gef / inkl * 100, 1)} %</b></div>
+      <div class="bar">${tol ? `<i class="lzone" style="left:${pos(inkl - tm)}%" title="Toleranz ${tol} km"></i>` : ""}<span style="width:${pos(gef)}%;background:${stCol};box-shadow:none"></span>
+        <i class="lhard" style="left:${pos(inkl)}%" title="Vertragsgrenze ${f(inkl)} km"></i>${n(soll) ? `<i class="bm soll" style="left:${pos(soll)}%" title="Soll heute ${f(soll)} km"></i>` : ""}</div>
+      <div class="lsax"><span style="left:${pos(inkl)}%">${f(inkl)}</span></div>
+      <div class="lsnote"><span><i class="ld soll"></i>Soll heute ${f(soll)}</span><span><i class="ld hard"></i>Grenze ${f(inkl)}</span>${tol ? `<span><i class="ld zone"></i>Toleranz ${tol}</span>` : ""}</div>`;
 
     const html = this._hd("Leasing", stTxt ? `<span style="color:${stCol};font-weight:700">${stTxt}</span>` : "", id) + `
       <div class="cstats lstats">${kpis}</div>
-      ${bar}
-      <div class="lsgrp"><span class="mgl">Vertrag</span><div class="lsrows">${vertrag}</div></div>
-      ${proj ? `<div class="lsgrp"><span class="mgl">Hochrechnung Vertragsende</span>${proj}</div>` : ""}`;
+      ${bar}`;
     if (el._html !== html) { el.innerHTML = html; el._html = html; }
   }
 
@@ -1757,18 +1733,20 @@ ha-icon{--mdc-icon-size:22px;display:inline-flex}
 #lease .pos,#lease .cstat.pos b{color:var(--green)}
 #lease .lscap{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
 #lease .lscap b{color:var(--text);font-variant-numeric:tabular-nums}
-#lease .bar{margin:8px 0 6px;position:relative;overflow:visible}
+#lease .bar{margin:8px 0 4px;position:relative;overflow:visible}
 #lease .bm.soll{background:#fff}
-#lease .lsnote{font-size:11.5px;color:var(--dim);margin-bottom:14px}
-#lease .lsgrp{margin-top:12px}
-#lease .lsgrp .mgl{display:block;margin-bottom:8px}
-#lease .lsrows{display:flex;flex-direction:column;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);padding:4px 14px}
-#lease .lsr{display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:13.5px;color:var(--muted)}
-#lease .lsr+.lsr{border-top:1px solid var(--line)}
-#lease .lsr b,#lease .lsproj b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
-#lease .lsr small,#lease .lsproj small{color:var(--muted);font-weight:500}
-#lease .lsproj{display:grid;grid-template-columns:1fr auto auto;column-gap:16px;row-gap:7px;align-items:baseline;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);padding:10px 14px;font-size:13.5px;color:var(--muted)}
-#lease .lsproj .h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;text-align:right}
+#lease .lsnote{display:flex;flex-wrap:wrap;align-items:center;column-gap:12px;row-gap:2px;font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+#lease .lsnote span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+#lease .ld{display:inline-block;width:3px;height:10px;border-radius:1px}
+#lease .ld.soll{background:#fff}#lease .ld.hard{background:var(--red)}
+#lease .ld.zone{width:12px;background:repeating-linear-gradient(135deg,rgba(247,183,51,.6) 0 3px,rgba(247,183,51,.15) 3px 6px)}
+#lease .bar span{position:relative;z-index:1}
+#lease .lzone{position:absolute;top:0;bottom:0;right:0;border-radius:0 6px 6px 0;z-index:2;background:repeating-linear-gradient(135deg,rgba(247,183,51,.45) 0 4px,rgba(247,183,51,.12) 4px 8px)}
+#lease .lhard{position:absolute;top:-4px;width:2px;height:18px;margin-left:-1px;background:var(--red);z-index:3}
+#lease .bm.soll{z-index:4}
+#lease .lsax{position:relative;height:16px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+#lease .lsax span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
+
 .wrap.compact .cline{font-size:13px;margin:-2px 0 10px}
 .wrap.compact .cstats{margin-bottom:10px;gap:6px}
 .wrap.compact .cstat{padding:6px 9px;border-radius:12px}
