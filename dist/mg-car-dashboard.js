@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=15  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=16  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.3.4";
+const VERSION = "3.3.5";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -105,6 +105,9 @@ const CAR_DEFAULTS = {
     // Leasing-Kilometerbudget: Sensor „km vor Rücklauf“ aus ev_assistant (alle Vertrags- und Hochrechnungswerte
     // stehen in seinen Attributen). Eigene Entity-ID möglich, "" = Kachel aus. Ohne Leasing-Vertrag bleibt sie ausgeblendet.
     leasing: "eva:leasing_km_vor_ruecklauf",
+    // Nutzungs-Kachel (km/kWh/Kosten je Zeitraum, Durchschnitte, Ladeorte aus ev_assistant):
+    // "auto" = nur wenn keine Leasing-Kachel angezeigt wird, true = immer, false = aus
+    usage: "auto",
 
     // --- Fahrtenbuch ---
     trips: "eva:trips",                   // Fahrtenbuch aus ev_assistant (oder ein Sensor mit Attribut "trips")
@@ -225,7 +228,7 @@ class MgCarDashboard extends HTMLElement {
         <div class="grid">
           <div class="col"><section class="panel car" id="car"></section><section class="panel grow" id="trips"></section></div>
           <div class="col"><section class="panel" id="live"></section><section class="panel" id="mgmt"></section></div>
-          <div class="col"><section class="panel grow" id="hist"></section><section class="panel" id="lease" hidden></section></div>
+          <div class="col"><section class="panel grow" id="hist"></section><section class="panel" id="lease" hidden></section><section class="panel" id="usage" hidden></section></div>
         </div>
       </div><dialog class="dlg" id="cardlg"></dialog>`;
     this._built = true;
@@ -252,6 +255,7 @@ class MgCarDashboard extends HTMLElement {
     this._render_trips();
     this._render_hist();
     this._render_lease();
+    this._render_usage();
   }
 
   /* evcc setzt die Sitzungswerte nach dem Laden auf 0 → letzte echte Sitzung aus dem Verlauf holen */
@@ -740,6 +744,47 @@ class MgCarDashboard extends HTMLElement {
     const html = this._hd("Leasing", stTxt ? `<span style="color:${stCol};font-weight:700">${stTxt}</span>` : "", id) + `
       <div class="cstats lstats">${kpis}</div>
       ${bar}`;
+    if (el._html !== html) { el.innerHTML = html; el._html = html; }
+  }
+
+  /* --- Nutzung (ev_assistant): Zeiträume, Durchschnitte, Ladeorte --- */
+  _render_usage() {
+    const el = this.shadowRoot.getElementById("usage"); if (!el) return;
+    const cfg = this._config.car.usage, E = this._eva();
+    const show = cfg === true || cfg === "always" || (cfg === "auto" && this.shadowRoot.getElementById("lease")?.hidden !== false);
+    const v = (k) => { const st = this._st(E[k]); const x = st ? parseFloat(st.state) : NaN; return isNaN(x) ? null : x; };
+    const P = [["day", "Heute"], ["week", "Woche"], ["month", "Monat"], ["year", "Jahr"]];
+    const R = [["odo_%_km", "km", 0, ""], ["kwh_%", "kWh", 1, ""], ["cost_%", "Kosten", 2, " €"]];
+    const rows = R.filter(([k]) => P.some(([p]) => v(k.replace("%", p)) != null));
+    const loc = this._st(E.charging_location_breakdown)?.attributes || {};
+    const kp = [
+      ["odo_avg_day", "Ø pro Tag", 1, "km"], ["odo_year_projected", "Prognose Jahr", 0, "km"],
+      [null, "Kosten je 100 km", 2, "€", loc.eur_je_100km, E.charging_location_breakdown],
+      ["co2_savings", "CO₂ gespart", 0, "kg"],
+    ].map(([k, l, d, u, raw, id]) => {
+      let x = raw ?? (k ? v(k) : null); if (x == null || isNaN(x)) return "";
+      if (u === "kg" && x >= 1000) { x /= 1000; u = "t"; d = 1; }
+      return `<button class="cstat" data-act="more" data-entity="${esc(id || E[k])}"><span>${l}</span><b>${de(x, d)}<small>${u}</small></b></button>`;
+    }).join("");
+    el.hidden = !show || (!rows.length && !kp);
+    if (el.hidden) { if (el._html) { el.innerHTML = ""; el._html = ""; } return; }
+
+    // Tabelle: Zeilen km / kWh / Kosten, Spalten Heute … Jahr
+    const cell = (k, d, u) => { const x = v(k); return x == null ? `<b class="dim">–</b>` : `<b data-act="more" data-entity="${esc(E[k])}">${de(x, Math.abs(x) >= 100 && d === 1 ? 0 : d)}${u ? `<small>${u}</small>` : ""}</b>`; };
+    const table = rows.length ? `<div class="ustab"><span></span>${P.map(([, l]) => `<span class="h">${l}</span>`).join("")}
+      ${rows.map(([k, l, d, u]) => `<span>${l}</span>${P.map(([p]) => cell(k.replace("%", p), d, u)).join("")}`).join("")}</div>` : "";
+
+    // Ladeorte: Heim (davon PV) / unterwegs als Balken
+    const h = loc.heim || {}, fr = loc.fremd || {};
+    const hp = Number(h.kwh_anteil_pct) || 0, fp = Number(fr.kwh_anteil_pct) || 0, sp = hp * (Number(h.solar_pct) || 0) / 100;
+    const kw = (x) => (x != null && !isNaN(x) ? ` · ${de(x, 0)} kWh` : "");
+    const locs = hp + fp > 0 ? `<button class="uloc" data-act="more" data-entity="${esc(E.charging_location_breakdown)}">
+      <span class="mgl">Geladen${loc.gesamt_autarkie_pct != null ? ` <small>· ${de(loc.gesamt_autarkie_pct, 0)} % aus PV</small>` : ""}</span>
+      <span class="ubar">${sp > 0 ? `<i class="pv" style="width:${sp}%"></i>` : ""}<i class="home" style="width:${hp - sp}%"></i><i class="ext" style="width:${fp}%"></i></span>
+      <span class="ulg"><span><i class="ld home"></i>Zuhause ${de(hp, 0)} %${kw(h.kwh)}</span>${sp > 0 ? `<span><i class="ld pv"></i>davon PV ${de(sp, 0)} %</span>` : ""}${fp > 0 ? `<span><i class="ld ext"></i>Unterwegs ${de(fp, 0)} %${kw(fr.kwh)}</span>` : ""}</span></button>` : "";
+
+    const odo = this._fmt(E.odo, 0);
+    const html = this._hd("Nutzung", odo ? `${odo.v} km` : "", E.odo) + (kp ? `<div class="cstats ustats">${kp}</div>` : "") + table + locs;
     if (el._html !== html) { el.innerHTML = html; el._html = html; }
   }
 
@@ -1728,6 +1773,20 @@ ha-icon{--mdc-icon-size:22px;display:inline-flex}
 .cstat span{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cstat b{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .cstat small{font-size:11.5px;color:var(--muted);font-weight:500;margin-left:3px}
+#usage .ustats{grid-template-columns:repeat(2,minmax(0,1fr));margin:0 0 14px}
+#usage .ustab{display:grid;grid-template-columns:auto repeat(4,minmax(0,1fr));column-gap:10px;row-gap:8px;align-items:baseline;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);padding:10px 14px;font-size:13.5px;color:var(--muted)}
+#usage .ustab .h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;text-align:right}
+#usage .ustab b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;cursor:pointer}
+#usage .ustab b.dim{color:var(--dim);cursor:default}
+#usage .ustab small{color:var(--muted);font-weight:500}
+#usage .uloc{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:14px}
+#usage .uloc .mgl small{letter-spacing:0;text-transform:none}
+#usage .ubar{display:flex;height:10px;border-radius:6px;overflow:hidden;background:rgba(255,255,255,.07)}
+#usage .ubar i{display:block;height:100%}
+#usage .pv{background:var(--green)}#usage .home{background:var(--cyan)}#usage .ext{background:var(--orange)}
+#usage .ulg{display:flex;flex-wrap:wrap;column-gap:12px;row-gap:2px;font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+#usage .ulg>span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+#usage .ld{display:inline-block;width:8px;height:8px;border-radius:2px}
 #lease .lstats{grid-template-columns:repeat(2,minmax(0,1fr));margin:0 0 14px}
 #lease .neg,#lease .cstat.neg b{color:var(--red)}
 #lease .pos,#lease .cstat.pos b{color:var(--green)}
