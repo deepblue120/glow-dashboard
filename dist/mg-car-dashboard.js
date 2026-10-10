@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=16  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=17  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.3.5";
+const VERSION = "3.3.6";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -105,9 +105,9 @@ const CAR_DEFAULTS = {
     // Leasing-Kilometerbudget: Sensor „km vor Rücklauf“ aus ev_assistant (alle Vertrags- und Hochrechnungswerte
     // stehen in seinen Attributen). Eigene Entity-ID möglich, "" = Kachel aus. Ohne Leasing-Vertrag bleibt sie ausgeblendet.
     leasing: "eva:leasing_km_vor_ruecklauf",
-    // Nutzungs-Kachel (km/kWh/Kosten je Zeitraum, Durchschnitte, Ladeorte aus ev_assistant):
-    // "auto" = nur wenn keine Leasing-Kachel angezeigt wird, true = immer, false = aus
-    usage: "auto",
+    // Nutzungs-Kachel (km/kWh/Kosten je Zeitraum, Durchschnitte, Ladeorte aus ev_assistant). Mit Leasing-Vertrag
+    // lässt sich im Kachelkopf zwischen Leasing und Nutzung umschalten, sonst wird nur die Nutzung gezeigt. false = aus
+    usage: true,
 
     // --- Fahrtenbuch ---
     trips: "eva:trips",                   // Fahrtenbuch aus ev_assistant (oder ein Sensor mit Attribut "trips")
@@ -712,7 +712,8 @@ class MgCarDashboard extends HTMLElement {
     const cfg = this._config.car.leasing;
     const id = !cfg ? null : String(cfg).startsWith("eva:") ? this._eva()[String(cfg).slice(4)] : cfg;
     const st = this._st(id), a = st?.attributes || {}, km = parseFloat(st?.state);
-    el.hidden = !st || OFFLINE_HD.includes(st.state) || isNaN(km);   // kein Leasing-Vertrag eingerichtet
+    this._leaseOk = !!st && !OFFLINE_HD.includes(st.state) && !isNaN(km);   // false = kein Leasing-Vertrag eingerichtet
+    el.hidden = !this._leaseOk || this._statView() === "usage";
     if (el.hidden) { if (el._html) { el.innerHTML = ""; el._html = ""; } return; }
     const n = (v) => typeof v === "number" && !isNaN(v);
     const f = (v, d = 0) => (n(v) ? de(v, d) : "–");
@@ -741,17 +742,34 @@ class MgCarDashboard extends HTMLElement {
       <div class="lsax"><span style="left:${pos(inkl)}%">${f(inkl)}</span></div>
       <div class="lsnote"><span><i class="ld soll"></i>Soll heute ${f(soll)}</span><span><i class="ld hard"></i>Grenze ${f(inkl)}</span>${tol ? `<span><i class="ld zone"></i>Toleranz ${tol}</span>` : ""}</div>`;
 
-    const html = this._hd("Leasing", stTxt ? `<span style="color:${stCol};font-weight:700">${stTxt}</span>` : "", id) + `
+    const html = this._statHd("lease", stTxt ? `<span style="color:${stCol};font-weight:700">${stTxt}</span>` : "", id) + `
       <div class="cstats lstats">${kpis}</div>
       ${bar}`;
     if (el._html !== html) { el.innerHTML = html; el._html = html; }
+  }
+
+  /* Leasing / Nutzung: mit Leasing-Vertrag (und eingeschalteter Nutzung) per Umschalter im Kachelkopf wechseln */
+  _statTabs() {
+    const E = this._eva(), u = this._config.car.usage;
+    return !!this._leaseOk && u !== false && u !== "" && ["odo_year_km", "kwh_year", "odo_avg_day", "cost_year"].some((k) => this._st(E[k]));
+  }
+  _statView() {
+    if (!this._statTabs()) return "lease";
+    if (!this._statTab) { try { this._statTab = localStorage.getItem("mg-car-stat-view"); } catch (e) {} }
+    return this._statTab === "usage" ? "usage" : "lease";
+  }
+  _statHd(view, label, entity) {
+    if (!this._statTabs()) return this._hd(view === "lease" ? "Leasing" : "Nutzung", label, entity);
+    const seg = [["lease", "Leasing"], ["usage", "Nutzung"]].map(([v, l]) => `<button class="hseg ${v === view ? "sel" : ""}" data-act="statview" data-v="${v}">${l}</button>`).join("");
+    return `<div class="hd stathd"><div class="hsegs">${seg}</div><span class="lbl">${label}</span>
+      ${entity ? `<button class="arrow" data-act="more" data-entity="${esc(entity)}">${icon("mdi:chevron-right")}</button>` : ""}</div>`;
   }
 
   /* --- Nutzung (ev_assistant): Zeiträume, Durchschnitte, Ladeorte --- */
   _render_usage() {
     const el = this.shadowRoot.getElementById("usage"); if (!el) return;
     const cfg = this._config.car.usage, E = this._eva();
-    const show = cfg === true || cfg === "always" || (cfg === "auto" && this.shadowRoot.getElementById("lease")?.hidden !== false);
+    const show = cfg !== false && cfg !== "" && (!this._leaseOk || this._statView() === "usage");
     const v = (k) => { const st = this._st(E[k]); const x = st ? parseFloat(st.state) : NaN; return isNaN(x) ? null : x; };
     const P = [["day", "Heute"], ["week", "Woche"], ["month", "Monat"], ["year", "Jahr"]];
     const R = [["odo_%_km", "km", 0, ""], ["kwh_%", "kWh", 1, ""], ["cost_%", "Kosten", 2, " €"]];
@@ -784,7 +802,7 @@ class MgCarDashboard extends HTMLElement {
       <span class="ulg"><span><i class="ld home"></i>Zuhause ${de(hp, 0)} %${kw(h.kwh)}</span>${sp > 0 ? `<span><i class="ld pv"></i>davon PV ${de(sp, 0)} %</span>` : ""}${fp > 0 ? `<span><i class="ld ext"></i>Unterwegs ${de(fp, 0)} %${kw(fr.kwh)}</span>` : ""}</span></button>` : "";
 
     const odo = this._fmt(E.odo, 0);
-    const html = this._hd("Nutzung", odo ? `${odo.v} km` : "", E.odo) + (kp ? `<div class="cstats ustats">${kp}</div>` : "") + table + locs;
+    const html = this._statHd("usage", odo ? `${odo.v} km` : "", E.odo) + (kp ? `<div class="cstats ustats">${kp}</div>` : "") + table + locs;
     if (el._html !== html) { el.innerHTML = html; el._html = html; }
   }
 
@@ -1695,6 +1713,11 @@ class MgCarDashboard extends HTMLElement {
     }
     if (act === "none") return;
     if (act === "chfilter") { this._chFilter = el.dataset.v; this._renderCharges(); this.shadowRoot.querySelector("#cardlg .dbody")?.scrollTo(0, 0); return; }
+    if (act === "statview") {
+      this._statTab = el.dataset.v;
+      try { localStorage.setItem("mg-car-stat-view", this._statTab); } catch (x) {}
+      this._render_lease(); this._render_usage(); return;
+    }
     if (act === "hrange") {
       this._hh = Number(el.dataset.h);
       try { localStorage.setItem("mg-car-hist-hours", String(this._hh)); } catch (x) {}
@@ -1773,6 +1796,8 @@ ha-icon{--mdc-icon-size:22px;display:inline-flex}
 .cstat span{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cstat b{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .cstat small{font-size:11.5px;color:var(--muted);font-weight:500;margin-left:3px}
+.stathd .hsegs{margin-left:0}
+.stathd .hseg{padding:0 12px}
 #usage .ustats{grid-template-columns:repeat(2,minmax(0,1fr));margin:0 0 14px}
 #usage .ustab{display:grid;grid-template-columns:auto repeat(4,minmax(0,1fr));column-gap:10px;row-gap:8px;align-items:baseline;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);padding:10px 14px;font-size:13.5px;color:var(--muted)}
 #usage .ustab .h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;text-align:right}

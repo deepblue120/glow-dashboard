@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=16`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=17`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -135,7 +135,7 @@ car:
 | `car.ev_assistant_entry` | config_entry_id von ev_assistant (sonst automatisch) |
 | `car.stats` | Kennzahlen in der Auto-Kachel (ev_assistant-Schlüssel oder Entity-IDs) |
 | `car.leasing` | Leasing-Kachel: Sensor „km vor Rücklauf“ aus ev_assistant (Standard), eigene Entity-ID oder `""` = aus. Ohne Leasing-Vertrag in ev_assistant automatisch ausgeblendet |
-| `car.usage` | Nutzungs-Kachel: `auto` (Standard, nur ohne Leasing-Kachel), `true` = immer, `false` = aus |
+| `car.usage` | Nutzungs-Kachel (Standard `true`). Mit Leasing-Vertrag wird im Kachelkopf zwischen Leasing und Nutzung umgeschaltet, sonst nur die Nutzung gezeigt. `false` = aus |
 | `car.trips` | Fahrtenbuch-Sensor (Attribut `trips`) |
 | `car.trips_visible` | Fahrten in der Kachel, wenn die Seite nicht an die Fensterhöhe angepasst ist (sonst so viele, wie hineinpassen) |
 | `car.trips_max` | Fahrten im Fenster „Alle Fahrten“ |
@@ -153,4 +153,4 @@ car:
 | Version | Datei |
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.3.5  | mg-car-dashboard.js (eigenständig) |
+| 3.3.6  | mg-car-dashboard.js (eigenständig) |
