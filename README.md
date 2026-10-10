@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=13`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=14`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -48,6 +48,7 @@ type: custom:mg-car-dashboard
 | Lademodus umschalten | ev_assistant (Auto / Smart / Immer / Schnell) |
 | Ladeziel (einstellbar) | Select der [evcc-Integration](https://github.com/marq24/ha-evcc) (`limitsoc`), automatisch gefunden |
 | Kennzahlen, Ladeplan, Vollladung | ev_assistant |
+| Leasing | alle Leasing-Werte aus ev_assistant (automatisch gefunden) |
 | Verlauf (geladene kWh) | „Wallbox Ladeleistung“ aus ev_assistant (ab 0.99.34), sonst das evcc-Ladelogbuch |
 | PV-Anteil im Verlauf | evcc (PV-Anteil der jeweiligen Ladesitzung) |
 
@@ -132,6 +133,7 @@ car:
 | `car.ev_assistant` | einzelne ev_assistant-Entitäten fest vorgeben (sonst automatisch gefunden) |
 | `car.ev_assistant_entry` | config_entry_id von ev_assistant (sonst automatisch) |
 | `car.stats` | Kennzahlen in der Auto-Kachel (ev_assistant-Schlüssel oder Entity-IDs) |
+| `car.leasing` | Leasing-Kachel: `auto` (Standard, alle ev_assistant-Werte mit „leasing“ im Schlüssel), eine Liste von Schlüsseln/Entity-IDs in fester Reihenfolge, oder `[]` = aus. Ein Prozentwert erscheint als Balken |
 | `car.trips` | Fahrtenbuch-Sensor (Attribut `trips`) |
 | `car.trips_visible` | Fahrten in der Kachel, wenn die Seite nicht an die Fensterhöhe angepasst ist (sonst so viele, wie hineinpassen) |
 | `car.trips_max` | Fahrten im Fenster „Alle Fahrten“ |
@@ -149,4 +151,4 @@ car:
 | Version | Datei |
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.3.1  | mg-car-dashboard.js (eigenständig) |
+| 3.3.2  | mg-car-dashboard.js (eigenständig) |

@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=13  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=14  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.3.1";
+const VERSION = "3.3.2";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -102,6 +102,9 @@ const CAR_DEFAULTS = {
     ev_assistant: {},
     ev_assistant_entry: "",          // config_entry_id von ev_assistant (leer = automatisch, bei mehreren Fahrzeugen das erste)
     stats: ["vehicle_avg_consumption", "odo", "cost_year", "savings"],   // Kennzahlen in der Auto-Kachel
+    // Leasing-Kachel: "auto" = alle Leasing-Werte aus ev_assistant (Schlüssel mit „leasing“), oder eine Liste
+    // von ev_assistant-Schlüsseln / Entity-IDs in der gewünschten Reihenfolge, [] = Kachel aus
+    leasing: "auto",
 
     // --- Fahrtenbuch ---
     trips: "eva:trips",                   // Fahrtenbuch aus ev_assistant (oder ein Sensor mit Attribut "trips")
@@ -222,7 +225,7 @@ class MgCarDashboard extends HTMLElement {
         <div class="grid">
           <div class="col"><section class="panel car" id="car"></section><section class="panel grow" id="trips"></section></div>
           <div class="col"><section class="panel" id="live"></section><section class="panel" id="mgmt"></section></div>
-          <div class="col"><section class="panel grow" id="hist"></section></div>
+          <div class="col"><section class="panel grow" id="hist"></section><section class="panel" id="lease" hidden></section></div>
         </div>
       </div><dialog class="dlg" id="cardlg"></dialog>`;
     this._built = true;
@@ -248,6 +251,7 @@ class MgCarDashboard extends HTMLElement {
     this._render_mgmt();
     this._render_trips();
     this._render_hist();
+    this._render_lease();
   }
 
   /* evcc setzt die Sitzungswerte nach dem Laden auf 0 → letzte echte Sitzung aus dem Verlauf holen */
@@ -696,6 +700,52 @@ class MgCarDashboard extends HTMLElement {
       ${split}
       <div class="lfacts">${facts}</div></div>
 `;
+  }
+
+  /* --- Leasing (ev_assistant) --- */
+  _leaseIds() {
+    const cfg = this._config.car.leasing, E = this._eva();
+    if (Array.isArray(cfg)) return cfg.map((k) => E[k] || (String(k).includes(".") ? k : null)).filter((id) => id && this._st(id));
+    if (cfg !== "auto") return [];
+    return Object.keys(E).filter((k) => /leas/i.test(k)).sort().map((k) => E[k]).filter((id) => this._st(id));
+  }
+  _leaseLabel(id) {
+    const s = this._st(id), reg = this._hass?.entities?.[id], dev = reg && this._hass?.devices?.[reg.device_id];
+    let n = reg?.name || s?.attributes?.friendly_name || id;
+    for (const pre of [dev?.name_by_user, dev?.name, this._evaPanel?.name]) if (pre && n.startsWith(pre + " ")) n = n.slice(pre.length + 1);
+    n = n.replace(/^leasing[\s:-]*/i, "").trim();
+    return n ? n.charAt(0).toUpperCase() + n.slice(1) : "Leasing";
+  }
+  _leaseVal(id) {
+    const s = this._st(id); if (!s || OFFLINE_HD.includes(s.state)) return null;
+    const dc = s.attributes.device_class, dom = id.split(".")[0];
+    if (dom === "binary_sensor" || ["on", "off"].includes(s.state)) return { v: s.state === "on" ? "ja" : "nein", u: "", on: s.state === "on" };
+    if (dc === "date" || dc === "timestamp" || /^\d{4}-\d{2}-\d{2}/.test(s.state)) {
+      const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(s.state) ? s.state + "T00:00" : s.state);
+      if (!isNaN(d)) return { v: `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`, u: "", date: d };
+    }
+    return this._fmt(id, (s.attributes.unit_of_measurement || "").toLowerCase() === "km" ? 0 : undefined);
+  }
+  _render_lease() {
+    const el = this.shadowRoot.getElementById("lease"); if (!el) return;
+    const ids = this._leaseIds();
+    el.hidden = !ids.length;
+    if (!ids.length) { if (el._html) { el.innerHTML = ""; el._html = ""; } return; }
+    const items = ids.map((id) => ({ id, lbl: this._leaseLabel(id), f: this._leaseVal(id), st: this._st(id) })).filter((x) => x.f);
+    // Fortschritt: erster Prozentwert (z. B. verbrauchtes km-Kontingent oder abgelaufene Laufzeit) als Balken
+    const pct = items.find((x) => x.st.attributes.unit_of_measurement === "%" && !isNaN(parseFloat(x.st.state)));
+    const pv = pct ? Math.max(0, Math.min(100, parseFloat(pct.st.state))) : null;
+    const warn = (x) => (x.f.on && /warn|über|ueber|ueberschr|exceed|over|mehr/i.test(x.id + x.lbl)) || (x.f.v && /^-/.test(String(x.f.v)) && /rest|verbleib|remaining/i.test(x.id + x.lbl));
+    const tiles = items.filter((x) => x !== pct).map((x) => {
+      const long = !x.f.u && String(x.f.v).length > 14;
+      return `<button class="cstat ${warn(x) ? "warn" : ""} ${long ? "wide" : ""}" data-act="more" data-entity="${esc(x.id)}" title="${esc(x.st.attributes.friendly_name || x.id)}">
+        <span>${esc(x.lbl)}</span><b>${esc(x.f.v)}${x.f.u ? `<small>${esc(x.f.u)}</small>` : ""}</b></button>`;
+    }).join("");
+    const html = this._hd("Leasing", pct ? `${de(pv, 0)} %` : "", null, pv != null && pv > 100 ? "warn" : "") +
+      (pct ? `<button class="lbar" data-act="more" data-entity="${esc(pct.id)}" title="${esc(pct.lbl)}"><span class="lbt">${esc(pct.lbl)}</span>
+        <span class="bar"><span style="width:${pv}%" class="${pv >= 100 ? "over" : pv >= 90 ? "hi" : ""}"></span></span></button>` : "") +
+      `<div class="cstats lstats">${tiles}</div>`;
+    if (el._html !== html) { el.innerHTML = html; el._html = html; }
   }
 
   /* --- Fahrtenbuch --- */
@@ -1683,6 +1733,17 @@ ha-icon{--mdc-icon-size:22px;display:inline-flex}
 .cstat span{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cstat b{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .cstat small{font-size:11.5px;color:var(--muted);font-weight:500;margin-left:3px}
+#lease .lstats{margin:0}
+#lease .cstat.wide{grid-column:1 / -1}
+#lease .cstat.wide b{white-space:normal;font-size:15px}
+#lease .cstat.warn{border-color:rgba(248,113,113,.45)}
+#lease .cstat.warn b{color:var(--red)}
+#lease .lbl.warn{color:var(--red)}
+#lease .lbar{display:flex;flex-direction:column;gap:6px;width:100%;margin:0 0 12px}
+#lease .lbt{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+#lease .bar{margin:0}
+#lease .bar span.hi{background:var(--gold)}
+#lease .bar span.over{background:var(--red)}
 .wrap.compact .cline{font-size:13px;margin:-2px 0 10px}
 .wrap.compact .cstats{margin-bottom:10px;gap:6px}
 .wrap.compact .cstat{padding:6px 9px;border-radius:12px}
