@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=12  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=13  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.3.0";
+const VERSION = "3.3.1";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -474,15 +474,18 @@ class MgCarDashboard extends HTMLElement {
 
     // ev_assistant: Ladeplan, Vollladung, Pause
     const plan = this._st(E.evcc_charge_plan), pa = plan?.attributes || {}, mc = this._st(E.evcc_mode_control), ma = mc?.attributes || {};
-    const planD = plan && !OFFLINE_HD.includes(plan.state) ? new Date(plan.state) : null, hasPlan = planD && !isNaN(planD);
+    const pi = this._planInfo(plan), hasPlan = !!pi;
     const fmtD = (d) => `${WD[d.getDay()]} ${d.getDate()}. ${MON[d.getMonth()]}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     const entry = this._evaEntryId();
+    if (hasPlan && this._planReq) { clearTimeout(this._planReq.timer); this._planReq = null; }   // Plan ist angekommen
+    const pr = this._planReq;
     let planHtml = "";
     if (entry || plan) {
       if (hasPlan) {
         const ps = pa.projected_start ? new Date(pa.projected_start) : null, pe = pa.projected_end ? new Date(pa.projected_end) : null;
+        const ttl = pi.date ? `${pi.soc != null ? `${Math.round(pi.soc)} %` : "Ladeplan"} bis ${fmtD(pi.date)}` : esc(plan.state);
         planHtml = `<div class="mplan act">
-          <div class="mph">${icon("mdi:calendar-clock")}<span><b>${pa.target_soc != null ? `${Math.round(pa.target_soc)} %` : "Ladeplan"} bis ${fmtD(planD)}</b>
+          <div class="mph">${icon("mdi:calendar-clock")}<span><b>${ttl}</b>
             ${ps && !isNaN(ps) ? `<small>Laden voraussichtlich ${pad(ps.getHours())}:${pad(ps.getMinutes())}${pe && !isNaN(pe) ? `–${pad(pe.getHours())}:${pad(pe.getMinutes())}` : ""} Uhr</small>` : ""}</span>
             <button class="qbtn ghost" data-act="mplanclear">${icon("mdi:delete-outline")}Löschen</button></div>
           ${pa.erwartung ? `<div class="mpe">${icon("mdi:information-outline")}${esc(pa.erwartung)}</div>` : ""}</div>`;
@@ -495,8 +498,9 @@ class MgCarDashboard extends HTMLElement {
           <div class="mpf">
             <label>Ziel<div class="tgt"><button class="tb" data-act="mplansoc" data-d="-5">−</button><span class="tv">${soc}<small> %</small></span><button class="tb" data-act="mplansoc" data-d="5">+</button></div></label>
             <label>bis<input class="pin" type="datetime-local" value="${esc(val)}" data-act="none"></label>
-            <button class="qbtn" data-act="mplanset"${entry ? "" : " disabled"}>${icon("mdi:check")}Plan setzen</button>
-          </div></div>`;
+            <button class="qbtn" data-act="mplanset"${entry && !pr?.busy ? "" : " disabled"}>${icon(pr?.busy ? "mdi:timer-sand" : "mdi:check")}${pr?.busy ? "Wird gesetzt …" : "Plan setzen"}</button>
+          </div>
+          ${pr?.err ? `<div class="mpe err">${icon("mdi:alert-circle-outline")}${esc(pr.err)}</div>` : ""}</div>`;
       }
     }
     const toggles = entry ? [
@@ -515,6 +519,26 @@ class MgCarDashboard extends HTMLElement {
       ${rec?.state === "on" ? `<div class="lrows"><button class="lrow warn" data-act="more" data-entity="${esc(E.charge_before_pv_recommended)}">${icon("mdi:weather-cloudy-alert")}<span>Empfehlung</span><b>Laden vor PV sinnvoll</b></button></div>` : ""}`;
   }
 
+  /* Ladeplan aus der ev_assistant-Entität lesen: Zeitstempel als Zustand (ISO), in Attributen oder als
+     Text („80 % bis 10.10.2026 07:00“). null = kein Plan. */
+  _planInfo(plan) {
+    const s = String(plan?.state ?? "").trim(), a = plan?.attributes || {};
+    if (!plan || OFFLINE_HD.includes(s.toLowerCase()) || /^(aus|off|kein|inaktiv|inactive|false|nicht|0$|[-–—]$)/i.test(s)) return null;
+    const toD = (v) => {
+      if (v == null || v === "") return null;
+      if (typeof v === "number" || /^\d{9,13}$/.test(String(v))) { const n = Number(v); return new Date(n < 1e12 ? n * 1000 : n); }
+      const m = String(v).match(/(\d{1,2})\.(\d{1,2})\.(\d{4})(?:,?\s+(\d{1,2}):(\d{2}))?/);
+      if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0));
+      return /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? new Date(v) : null;
+    };
+    let date = null;
+    for (const v of [a.target_time, a.zielzeit, a.plan_time, a.time, s]) { const d = toD(v); if (d && !isNaN(d)) { date = d; break; } }
+    const sm = s.match(/(\d{1,3})\s*%/);
+    const soc = a.target_soc ?? a.ziel_soc ?? a.soc ?? (sm ? Number(sm[1]) : null);
+    if (!date && !/\d/.test(s)) return null;   // Text ohne Zeit/Ziel: kein Plan
+    return { date, soc: soc != null && !isNaN(Number(soc)) ? Number(soc) : null };
+  }
+
   _renderLimitRow(c, ev, E, ma) {
     const entry = this._evaEntryId();
     // Ladeziel als Dropdown
@@ -530,7 +554,8 @@ class MgCarDashboard extends HTMLElement {
     if (this._balOptimistic != null && !!ma.balancing_enabled === this._balOptimistic) this._balOptimistic = null;   // bestätigt
     const balOptimistic = this._balOptimistic;
     const balOn = balOptimistic != null ? balOptimistic : !!ma.balancing_enabled;
-    const balAkt = !!ma.balancing_aktiv, balF = !!ma.balancing_faellig;
+    // „lädt auf 100 %“ und Blinken nur, wenn die Vollladung aktiv ist UND das Auto gerade wirklich lädt
+    const balAkt = !!ma.balancing_aktiv && balOn && this._carState().charging, balF = !!ma.balancing_faellig;
     const nextFull = ma.naechste_vollladung_faellig_ts ? new Date(ma.naechste_vollladung_faellig_ts * (ma.naechste_vollladung_faellig_ts < 1e12 ? 1000 : 1)) : null;
     const balSub = balAkt ? "lädt auf 100 %" : balF ? "fällig" : nextFull && !isNaN(nextFull) ? `nächste ${WD[nextFull.getDay()]} ${nextFull.getDate()}.` : "";
     let balBtn = "";
@@ -561,9 +586,9 @@ class MgCarDashboard extends HTMLElement {
 
   _evaCall(service, data) {
     const id = this._evaEntryId();
-    if (!id) { console.warn("mg-car: ev_assistant config_entry_id nicht gefunden. Trage car.ev_assistant_entry ein."); return; }
+    if (!id) { console.warn("mg-car: ev_assistant config_entry_id nicht gefunden. Trage car.ev_assistant_entry ein."); return Promise.reject(new Error("ev_assistant nicht gefunden")); }
     this._log("ev_assistant →", service, { config_entry_id: id, ...data });
-    this._hass.callService("ev_assistant", service, { config_entry_id: id, ...data });
+    return Promise.resolve(this._hass.callService("ev_assistant", service, { config_entry_id: id, ...data }));
   }
 
   _mnum(el) {
@@ -1086,6 +1111,7 @@ class MgCarDashboard extends HTMLElement {
       else head = `<span class="hsum dim">nicht geladen</span>`;
     }
     el.innerHTML = `<div class="hd"><span class="ttl">Verlauf</span>${head}<div class="hsegs">${seg}</div></div>` + body;
+    if (H) el.style.minHeight = "";
   }
 
 
@@ -1261,9 +1287,10 @@ class MgCarDashboard extends HTMLElement {
   _fit() {
     const wrap = this.shadowRoot?.querySelector(".wrap");
     if (!wrap) return;
+    const top = this.getBoundingClientRect().top + window.scrollY;
+    wrap.classList.toggle("sat", top < 30);   // ganz oben (ohne HA-Kopfzeile): Abstand zur iPhone-Statusleiste
     const on = this._config?.fit_screen !== false && this.clientWidth > 1180;
     if (!on) { wrap.classList.remove("fit"); return; }
-    const top = this.getBoundingClientRect().top + window.scrollY;
     const h = Math.max(560, Math.floor(window.innerHeight - top));
     wrap.style.setProperty("--fit-h", h + "px");
     wrap.classList.add("fit");
@@ -1538,7 +1565,7 @@ class MgCarDashboard extends HTMLElement {
       const enable = el.dataset.v === "1";
       this._balOptimistic = enable;
       this._render_mgmt();
-      this._evaCall("set_weekly_full_charge_enabled", { enabled: enable });
+      this._evaCall("set_weekly_full_charge_enabled", { enabled: enable }).catch((x) => console.warn("mg-car:", x));
       // bis die Integration den neuen Wert meldet (spätestens nach 30 s wieder echten Wert zeigen)
       clearTimeout(this._balTimer);
       this._balTimer = setTimeout(() => { this._balOptimistic = null; this._render_mgmt(); }, 30000);
@@ -1556,26 +1583,35 @@ class MgCarDashboard extends HTMLElement {
     if (act === "evamode") {
       const v = el.dataset.v;
       this._evaModeOpt = { v, t: Date.now() };
-      if (v === "auto") this._evaCall("clear_evcc_manual_mode", {}); else this._evaCall("set_evcc_manual_mode", { mode: v });
+      (v === "auto" ? this._evaCall("clear_evcc_manual_mode", {}) : this._evaCall("set_evcc_manual_mode", { mode: v })).catch((x) => console.warn("mg-car:", x));
       this._render_mgmt();
       setTimeout(() => this._render_mgmt(), 20500);
       return;
     }
-    if (act === "mpause") { this._evaCall("set_evcc_mode_control_pause", { paused: el.dataset.v === "1" }); return; }
-    if (act === "mplanclear") { if (window.confirm("Ladeplan löschen?")) this._evaCall("clear_evcc_charge_plan", {}); return; }
+    if (act === "mpause") { this._evaCall("set_evcc_mode_control_pause", { paused: el.dataset.v === "1" }).catch((x) => console.warn("mg-car:", x)); return; }
+    if (act === "mplanclear") { if (window.confirm("Ladeplan löschen?")) this._evaCall("clear_evcc_charge_plan", {}).catch((x) => window.alert(`Ladeplan konnte nicht gelöscht werden: ${x?.message || x}`)); return; }
     if (act === "mplansoc") { this._planSoc = Math.max(10, Math.min(100, (this._planSoc ?? 80) + Number(el.dataset.d))); this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
     if (act === "mplanset") {
       const v = this.shadowRoot.querySelector("#mgmt .pin")?.value, t = v ? new Date(v).getTime() : NaN;
       if (isNaN(t) || t < Date.now() + 10 * 60000) { window.alert("Bitte eine Zielzeit in der Zukunft wählen."); return; }
-      this._evaCall("set_evcc_charge_plan", { target_soc: this._planSoc ?? 80, target_time: Math.round(t / 1000) });
-      this._planTime = null; return;
+      // Rückmeldung: „Wird gesetzt …“, Fehler des Service anzeigen; meldet ev_assistant nach 20 s keinen Plan, Hinweis zeigen
+      clearTimeout(this._planReq?.timer);
+      const req = (this._planReq = { busy: true, err: "" });
+      const fail = (msg) => { if (this._planReq !== req) return; clearTimeout(req.timer); req.busy = false; req.err = msg; this._planTime = v; this._render_mgmt(); };
+      req.timer = setTimeout(() => fail("evcc hat keinen Ladeplan übernommen. Ist dem Ladepunkt in evcc ein Fahrzeug zugeordnet und in ev_assistant der evcc-Fahrzeugname eingetragen?"), 20000);
+      this._evaCall("set_evcc_charge_plan", { target_soc: this._planSoc ?? 80, target_time: Math.round(t / 1000) })
+        .catch((x) => fail(`Ladeplan konnte nicht gesetzt werden: ${x?.message || x?.error?.message || x}`));
+      this._planTime = v; this._render_mgmt(); return;
     }
     if (act === "none") return;
     if (act === "chfilter") { this._chFilter = el.dataset.v; this._renderCharges(); this.shadowRoot.querySelector("#cardlg .dbody")?.scrollTo(0, 0); return; }
     if (act === "hrange") {
       this._hh = Number(el.dataset.h);
       try { localStorage.setItem("mg-car-hist-hours", String(this._hh)); } catch (x) {}
-      this._carHist = null; this._update(true); this._loadCarHist(); return;
+      // Höhe halten, bis die neuen Daten da sind – sonst fällt die Seite kurz zusammen und springt nach oben (iOS)
+      const hel = this.shadowRoot.getElementById("hist");
+      if (hel) hel.style.minHeight = hel.offsetHeight + "px";
+      this._carHist = null; this._render_hist(); this._loadCarHist(); return;
     }
     if (act === "cardetail") {
       const id = this._real(this._config.car.soc) || this._eva().home_kwh; if (!id) return;
@@ -1710,6 +1746,9 @@ ha-icon{--mdc-icon-size:22px;display:inline-flex}
   .panel{border-radius:24px;padding:16px}
 }
 @media (prefers-reduced-motion:reduce){.bar span.charging{animation:none}}
+.wrap.sat{padding-top:calc(18px + env(safe-area-inset-top,0px))}
+.wrap.fit.sat{padding-top:calc(12px + env(safe-area-inset-top,0px))}
+@container (max-width:720px){.wrap.sat{padding-top:calc(12px + env(safe-area-inset-top,0px))}}
 `;
 
 const CAR_STYLE = `
@@ -1752,6 +1791,7 @@ const CAR_STYLE = `
 .mmode.vorgabe.manual{background:linear-gradient(160deg,rgba(239,68,68,.18),rgba(239,68,68,.04));border-color:rgba(239,68,68,.55)}
 .mmode.vorgabe.manual .mmh{color:#ef4444}
 .mplan{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);margin-bottom:8px}
+.mpe.err,.mpe.err ha-icon{color:var(--red)}
 .mplan.act{border-color:rgba(56,189,248,.45);background:linear-gradient(160deg,rgba(56,189,248,.12),rgba(56,189,248,.02))}
 .mph{display:flex;align-items:center;gap:10px}
 .mph > ha-icon{--mdc-icon-size:22px;color:var(--cyan);flex:none}
@@ -1789,7 +1829,7 @@ const CAR_STYLE = `
 .mbtn .mchv{--mdc-icon-size:14px;opacity:.4;margin-left:auto;flex:none}
 .mbtn.lim b{color:var(--cyan)}
 .mbtn.lim ha-icon:first-child{color:var(--cyan)}
-.mbtn.bal.on{border-color:rgba(52,211,153,.4)}
+.mbtn.bal.on{border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1)}
 .mbtn.bal.on ha-icon{color:var(--green)}
 .mbtn.bal.on b{color:var(--green)}
 .mbtn.bal.act{animation:mgpulse 1.4s ease-in-out infinite}
