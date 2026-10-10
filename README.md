@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=14`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=17`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -48,7 +48,8 @@ type: custom:mg-car-dashboard
 | Lademodus umschalten | ev_assistant (Auto / Smart / Immer / Schnell) |
 | Ladeziel (einstellbar) | Select der [evcc-Integration](https://github.com/marq24/ha-evcc) (`limitsoc`), automatisch gefunden |
 | Kennzahlen, Ladeplan, Vollladung | ev_assistant |
-| Leasing-Kilometerbudget | ev_assistant „km vor Rücklauf“ (Vertrag, Soll/Ist, Hochrechnungen aus den Attributen) |
+| Nutzung (km/kWh/Kosten je Zeitraum, Ø km/Tag, Hochrechnung, €/100 km, CO₂, Ladeorte) | ev_assistant |
+| Leasing-Kilometerbudget | ev_assistant „km vor Rücklauf“ (Status, Soll/Ist, Restbudget; Balken mit Vertragsgrenze und Toleranzband) |
 | Verlauf (geladene kWh) | „Wallbox Ladeleistung“ aus ev_assistant (ab 0.99.34), sonst das evcc-Ladelogbuch |
 | PV-Anteil im Verlauf | evcc (PV-Anteil der jeweiligen Ladesitzung) |
 
@@ -134,6 +135,7 @@ car:
 | `car.ev_assistant_entry` | config_entry_id von ev_assistant (sonst automatisch) |
 | `car.stats` | Kennzahlen in der Auto-Kachel (ev_assistant-Schlüssel oder Entity-IDs) |
 | `car.leasing` | Leasing-Kachel: Sensor „km vor Rücklauf“ aus ev_assistant (Standard), eigene Entity-ID oder `""` = aus. Ohne Leasing-Vertrag in ev_assistant automatisch ausgeblendet |
+| `car.usage` | Nutzungs-Kachel (Standard `true`). Mit Leasing-Vertrag wird im Kachelkopf zwischen Leasing und Nutzung umgeschaltet, sonst nur die Nutzung gezeigt. `false` = aus |
 | `car.trips` | Fahrtenbuch-Sensor (Attribut `trips`) |
 | `car.trips_visible` | Fahrten in der Kachel, wenn die Seite nicht an die Fensterhöhe angepasst ist (sonst so viele, wie hineinpassen) |
 | `car.trips_max` | Fahrten im Fenster „Alle Fahrten“ |
@@ -151,4 +153,4 @@ car:
 | Version | Datei |
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.3.2  | mg-car-dashboard.js (eigenständig) |
+| 3.3.6  | mg-car-dashboard.js (eigenständig) |
