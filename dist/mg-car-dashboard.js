@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=17  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=18  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.3.6";
+const VERSION = "3.3.7";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -527,6 +527,15 @@ class MgCarDashboard extends HTMLElement {
       ${rec?.state === "on" ? `<div class="lrows"><button class="lrow warn" data-act="more" data-entity="${esc(E.charge_before_pv_recommended)}">${icon("mdi:weather-cloudy-alert")}<span>Empfehlung</span><b>Laden vor PV sinnvoll</b></button></div>` : ""}`;
   }
 
+  /* Hinweis, wenn ev_assistant den Plan nicht an evcc weitergibt – meist findet es das Fahrzeug in evcc nicht
+     (der Fahrzeugtitel in evcc muss zum in ev_assistant eingetragenen evcc-Fahrzeugnamen passen) */
+  _planFailText() {
+    const name = this._config.car.evcc_vehicle || this._evaPanel?.evcc_vehicle_name;
+    return name
+      ? `Ladeplan nicht übernommen: ev_assistant findet in evcc kein Fahrzeug mit dem Titel „${name}“. Den Fahrzeugtitel in evcc und den evcc-Fahrzeugnamen in den ev_assistant-Optionen angleichen (Schreibweise wie im evcc-UI).`
+      : "Ladeplan nicht übernommen: ev_assistant konnte das Fahrzeug in evcc nicht zuordnen. In den ev_assistant-Optionen den evcc-Fahrzeugnamen genau so eintragen, wie er im evcc-UI heißt.";
+  }
+
   /* Ladeplan aus der ev_assistant-Entität lesen: Zeitstempel als Zustand (ISO), in Attributen oder als
      Text („80 % bis 10.10.2026 07:00“). null = kein Plan. */
   _planInfo(plan) {
@@ -554,7 +563,11 @@ class MgCarDashboard extends HTMLElement {
     if (ev.limit_soc) {
       const limSt = this._st(ev.limit_soc);
       if (!limSt) this._log("limit_soc", ev.limit_soc, "nicht in hass.states gefunden");
-      const v = limSt?.state, pick = !!this._real(ev.limit_soc);   // nur eine echte select-/number-Entität ist auswählbar
+      let v = limSt?.state;
+      const pick = !!this._real(ev.limit_soc);   // nur eine echte select-/number-Entität ist auswählbar
+      // Ladeziel auf Fahrzeug-Ebene (evcc): das Select des Ladepunkts bleibt leer/0 → wirksames Ladeziel aus evcc anzeigen
+      const eff = Number(this._live().limit_soc);
+      if ((v == null || OFFLINE_HD.includes(v) || !parseFloat(v)) && eff > 0) v = String(eff);
       if (limSt) limBtn = `<button class="mbtn lim ${pick ? "" : "ro"}" ${pick ? `data-act="limmenu" data-entity="${esc(this._real(ev.limit_soc))}"` : `title="Ladeziel aus evcc"`}>
         ${icon("mdi:battery-check-outline")}<div class="mtx"><b>${v != null && !OFFLINE_HD.includes(v) ? esc(String(Math.round(parseFloat(v)) || v).replace(/ ?%$/, "")) + " %" : "–"}</b><span>Ladeziel</span></div>${pick ? icon("mdi:chevron-down", "mchv") : ""}</button>`;
     }
@@ -1702,11 +1715,11 @@ class MgCarDashboard extends HTMLElement {
     if (act === "mplanset") {
       const v = this.shadowRoot.querySelector("#mgmt .pin")?.value, t = v ? new Date(v).getTime() : NaN;
       if (isNaN(t) || t < Date.now() + 10 * 60000) { window.alert("Bitte eine Zielzeit in der Zukunft wählen."); return; }
-      // Rückmeldung: „Wird gesetzt …“, Fehler des Service anzeigen; meldet ev_assistant nach 20 s keinen Plan, Hinweis zeigen
+      // Rückmeldung: „Wird gesetzt …“, Fehler des Service anzeigen; meldet ev_assistant nach 12 s keinen Plan, Hinweis zeigen
       clearTimeout(this._planReq?.timer);
       const req = (this._planReq = { busy: true, err: "" });
       const fail = (msg) => { if (this._planReq !== req) return; clearTimeout(req.timer); req.busy = false; req.err = msg; this._planTime = v; this._render_mgmt(); };
-      req.timer = setTimeout(() => fail("evcc hat keinen Ladeplan übernommen. Ist dem Ladepunkt in evcc ein Fahrzeug zugeordnet und in ev_assistant der evcc-Fahrzeugname eingetragen?"), 20000);
+      req.timer = setTimeout(() => fail(this._planFailText()), 12000);
       this._evaCall("set_evcc_charge_plan", { target_soc: this._planSoc ?? 80, target_time: Math.round(t / 1000) })
         .catch((x) => fail(`Ladeplan konnte nicht gesetzt werden: ${x?.message || x?.error?.message || x}`));
       this._planTime = v; this._render_mgmt(); return;
