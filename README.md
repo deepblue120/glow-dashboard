@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=23`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=24`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -46,8 +46,8 @@ type: custom:mg-car-dashboard
 | Letzte Ladung, Alle Ladungen | evcc-Ladelogbuch und Fremdladungen über ev_assistant |
 | Fahrtenbuch | ev_assistant |
 | Lademodus umschalten | ev_assistant (Auto / Smart mit „immer laden“ aus · immer · 1x / Schnell); „1x“ über die Auswahl „Mit min. laden“ der evcc-Integration |
-| Ladeziel (einstellbar) | Select der [evcc-Integration](https://github.com/marq24/ha-evcc) (`limitsoc`), automatisch gefunden |
-| Kennzahlen, Ladeplan, Vollladung | ev_assistant |
+| Kennzahlen, Ladeplan, Vollladung, Automatik pausieren | ev_assistant |
+| Ladeziel (einstellbar) und „Ziel jetzt“ | ev_assistant (`target_soc_max` / `target_soc`), ohne aktive ev_assistant-Steuerung das Ladeziel-Select der evcc-Integration |
 | Nutzung (km/kWh/Kosten je Zeitraum, Ø km/Tag, Hochrechnung, €/100 km, CO₂, Ladeorte) | ev_assistant |
 | Leasing-Kilometerbudget | ev_assistant „km vor Rücklauf“ (Status, Soll/Ist, Restbudget; Balken mit Vertragsgrenze und Toleranzband) |
 | Verlauf (geladene kWh) | „Wallbox Ladeleistung“ aus ev_assistant (ab 0.99.34), sonst das evcc-Ladelogbuch |
@@ -154,4 +154,4 @@ car:
 | Version | Datei |
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.4.2  | mg-car-dashboard.js (eigenständig) |
+| 3.4.3  | mg-car-dashboard.js (eigenständig) |
