@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=25  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=26  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.0";
+const VERSION = "3.5.1";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -56,7 +56,7 @@ const CAR_DEFAULTS = {
   car: {
     // --- Fahrzeug ---
     name: "",                         // leer = Fahrzeugname aus ev_assistant
-    image: "",                        // Bild des Autos, z. B. "/local/auto.png" (leer = kein Bild)
+    image: "",                        // Bild des Autos, z. B. "/local/auto.png" (leer = Fahrzeugbild aus ev_assistant ab 0.99.45, sonst kein Bild)
     soc: "eva:soc",                   // Ladestand: SoC-Sensor aus ev_assistant, sonst evcc
     range: "eva:range",               // Reichweite: ev_assistant „Reichweite (real)“
     status: "eva:motor",              // fährt: Motor-Sensor aus ev_assistant (sofern dort freigegeben)
@@ -221,6 +221,7 @@ class MgCarDashboard extends HTMLElement {
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
       this.shadowRoot.addEventListener("click", (e) => this._click(e));
+      this.shadowRoot.addEventListener("error", (e) => { if (e.target?.classList?.contains("carimg")) this._carImageError(e.target); }, true);
     }
     if (!this._pinBound) { this._pinBound = true; this.shadowRoot.addEventListener("change", (e) => { const t = e.composedPath()[0]; if (t?.classList?.contains("pin")) { this._planTime = t.value; t.blur(); } }); }
     if (!this._hoverBound) {
@@ -1632,7 +1633,30 @@ class MgCarDashboard extends HTMLElement {
     return { charging, plugged, driving, pw };
   }
 
+  /* Fahrzeugbild: eigenes car.image, sonst das Bild aus ev_assistant (Entität „Fahrzeugbild“, ab 0.99.45).
+     Ohne Bild steht deren Zustand auf „unknown“ – dann kein Bild (image_proxy würde mit 500 antworten).
+     Die URL enthält einen Token, der alle paar Minuten wechselt: sie wird nur bei geändertem Zustand
+     (= neues Bild) übernommen, damit das Bild nicht ständig neu lädt; schlägt das Laden fehl, einmal mit
+     frischer URL wiederholen. */
+  _carImage() {
+    const c = this._config.car;
+    if (c.image) return c.image;
+    const id = this._evaPanel?.entities?.vehicle_image || this._eva().vehicle_image, st = id && this._hass?.states[id];
+    if (!st || OFFLINE_HD.includes(st.state) || !st.attributes?.entity_picture) { this._imgC = null; return ""; }
+    if (this._imgC?.id !== id || this._imgC.v !== st.state) this._imgC = { id, v: st.state, url: st.attributes.entity_picture };
+    return this._imgC.failed ? "" : this._imgC.url;
+  }
+  _carImageError(img) {
+    const C = this._imgC, st = C && this._hass?.states[C.id];
+    if (C && !C.retried && st?.attributes?.entity_picture) { C.retried = true; C.url = st.attributes.entity_picture; }   // frischer Token
+    else if (C) C.failed = true;
+    else { img.style.display = "none"; return; }
+    const el = this.shadowRoot.getElementById("car"); if (el) el._html = null;
+    this._render_car();
+  }
+
   _render_car() {
+    const img = this._carImage();
     const c = this._config.car, ev = c.evcc || {}, E = this._eva();
     const hasSoc = !!this._st(c.soc), soc = Math.max(0, Math.min(100, this._num(c.soc)));
     const { charging, plugged, driving, pw } = this._carState();
@@ -1691,7 +1715,7 @@ class MgCarDashboard extends HTMLElement {
       <div class="carbody" data-act="cardetail">
         <div><div class="soc">${hasSoc ? Math.round(soc) : "–"}<sup>%</sup></div>
           <div class="range">${range ? `${Math.round(this._num(c.range))} km` : rEst ? `${rEst.v} km` : ""}${range && rEst ? `<small> · real ≈ ${rEst.v} km</small>` : ""}</div></div>
-        ${c.image ? `<img class="carimg" src="${esc(c.image)}" alt="" onerror="this.style.display='none'">` : ""}
+        ${img ? `<img class="carimg" src="${esc(img)}" alt="">` : ""}
       </div>
       <div class="bar">${marks}<span style="width:${soc}%" class="${charging ? "charging" : ""}"></span></div>
       ${line}
