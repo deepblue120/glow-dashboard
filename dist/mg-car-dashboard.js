@@ -559,11 +559,10 @@ class MgCarDashboard extends HTMLElement {
     const limV = Number(L.limit_soc) > 0 ? `${de(Number(L.limit_soc), 0)} %` : "–";
     const plan = this._st(E.evcc_charge_plan), pi = this._planInfo(plan), pa = plan?.attributes || {};
     const planV = pi ? `${pi.soc != null ? `${Math.round(pi.soc)} % · ` : ""}${pi.date ? `${WD[pi.date.getDay()]} ${pad(pi.date.getHours())}:${pad(pi.date.getMinutes())}` : ""}` : "kein Plan";
-    const stat = (lbl, inner, color, extra = "") => `<div class="mst" style="--cc:${color}" ${extra}><span>${lbl}</span><b>${inner}</b></div>`;
-    const evccHtml = `<div class="mgrp"><span class="mgl">evcc <small>aktueller Stand</small></span><div class="mstats">
-      ${stat("Lademodus", `${mInfo.i}${esc(mInfo.t)}`, mInfo.c)}
-      ${stat("Ladeziel", limV, "var(--cyan)", `title="Ladeziel, das evcc gerade verwendet"`)}
-      ${stat("Ladeplan", esc(planV), pi ? "var(--cyan)" : "var(--muted)", pi ? `title="${pa.aktiv ? "evcc lädt nach diesem Plan" : "geplant"}"` : "")}</div></div>`;
+    // Kopf: aktueller evcc-Lademodus oben rechts, darunter als kleiner Hinweis Ladeziel und Ladeplan in evcc
+    const head = `<div class="hd"><span class="ttl">Lademanagement</span>
+      <span class="lbl mnow" style="--cc:${mInfo.c}" title="Lademodus in evcc">${mInfo.i}${esc(mInfo.t)}</span></div>
+      <div class="mhint" title="Aktueller Stand in evcc"><span class="msrc">evcc</span><span>Ladeziel <b>${limV}</b></span><span>Ladeplan <b>${pi ? esc(planV) : "–"}</b>${pi && pa.aktiv ? " · läuft" : ""}</span></div>`;
 
     // --- ev_assistant: Lademodus (Auto oder manuell) ---
     const o = this._evaSel && Date.now() - this._evaSel.t < 20000 ? this._evaSel.v : null;
@@ -597,8 +596,8 @@ class MgCarDashboard extends HTMLElement {
       ${this._planReq?.err ? `<div class="mpe err">${icon("mdi:alert-circle-outline")}${esc(this._planReq.err)}</div>` : this._planReq?.info ? `<div class="mpe">${icon("mdi:information-outline")}${esc(this._planReq.info)}</div>` : ""}</div>`;
 
     const rec = this._st(E.charge_before_pv_recommended);
-    el.innerHTML = this._hd("Lademanagement") + evccHtml + `
-      <div class="mgrp"><span class="mgl">ev_assistant <small>Steuerung</small></span>${modes}${ctl}${planForm}</div>
+    el.innerHTML = head + `
+      <div class="mgrp"><span class="mgl">ev_assistant</span>${modes}${ctl}${planForm}</div>
       ${rec?.state === "on" ? `<div class="lrows"><button class="lrow warn" data-act="more" data-entity="${esc(E.charge_before_pv_recommended)}">${icon("mdi:weather-cloudy-alert")}<span>Empfehlung</span><b>Laden vor PV sinnvoll</b></button></div>` : ""}`;
   }
 
@@ -2228,6 +2227,13 @@ const CAR_STYLE = `
 .mbtn.tnow b{color:var(--text)}
 .mbtn.tnow ha-icon:first-child{color:var(--muted)}
 .mbottom.mact{margin:8px 0 0}
+#mgmt .hd{margin-bottom:4px}
+.lbl.mnow{display:inline-flex;align-items:center;gap:6px;color:var(--cc);font-weight:600}
+.lbl.mnow ha-icon{--mdc-icon-size:18px}
+.lbl.mnow .glyph{font-size:13px;font-weight:800;color:var(--cc)}
+.mhint{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px 14px;margin:0 0 12px;font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+.mhint b{color:var(--muted);font-weight:600}
+.mhint .msrc{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:0 5px}
 .mstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .mst{display:flex;flex-direction:column;gap:3px;padding:8px 12px;border-radius:14px;background:rgba(255,255,255,.02);border:1px dashed var(--tileb);min-width:0}
 .mst span{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
