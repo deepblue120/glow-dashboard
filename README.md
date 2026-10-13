@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=25`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=26`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -54,7 +54,7 @@ type: custom:mg-car-dashboard
 | PV-Anteil im Verlauf | evcc (PV-Anteil der jeweiligen Ladesitzung) |
 
 Einstellungen mit `eva:` stehen für diese automatischen Quellen. Jeder Wert lässt sich durch eine eigene
-Entity-ID ersetzen. Bei mehreren Ladepunkten in der evcc-Integration wählt `car.evcc_loadpoint` (Teil der Entity-ID) den richtigen. Von Hand bleibt nur das **Bild** (`car.image`). Den Ladestrom zeigt die Karte nur mit `car.limit` an (`eva:max_current` = Select der evcc-Integration). Den Strom je Phase zeigt sie beim Laden hinter der Ladeleistung: aus evccs `chargeCurrents`, sofern ev_assistant sie in den evcc-Live-Werten (`charge_currents`) mitliefert, sonst aus den Sensoren „Ladestrom P1–P3“ der evcc-Integration (dort standardmäßig deaktiviert) oder mit `car.evcc.currents: [sensor.l1, sensor.l2, sensor.l3]`.
+Entity-ID ersetzen. Bei mehreren Ladepunkten in der evcc-Integration wählt `car.evcc_loadpoint` (Teil der Entity-ID) den richtigen. Das **Bild** kommt aus ev_assistant (Entität „Fahrzeugbild“, ab 0.99.45, im ev_assistant-Panel hochladen); ein eigenes Bild per `car.image` hat Vorrang. Den Ladestrom zeigt die Karte nur mit `car.limit` an (`eva:max_current` = Select der evcc-Integration). Den Strom je Phase zeigt sie beim Laden hinter der Ladeleistung: aus evccs `chargeCurrents`, sofern ev_assistant sie in den evcc-Live-Werten (`charge_currents`) mitliefert, sonst aus den Sensoren „Ladestrom P1–P3“ der evcc-Integration (dort standardmäßig deaktiviert) oder mit `car.evcc.currents: [sensor.l1, sensor.l2, sensor.l3]`.
 Motor, Stecker und Ladeleistung gibt ev_assistant ab Version 0.99.34 weiter. Ohne evcc lässt sich der PV-Anteil
 über Netzbezug und Hausverbrauch (Leistung) berechnen: `energy.grid_import`, `energy.home`.
 Mit `debug: true` zeigt die Browser-Konsole, welche Quelle für welchen Wert verwendet wird.
@@ -125,7 +125,7 @@ car:
 | `fit_screen` | Seite an die Fensterhöhe anpassen (Desktop) |
 | `debug` | Diagnose-Meldungen in der Browser-Konsole |
 | `energy.car_power` / `grid_import` / `home` | Ladeleistung, Netzbezug, Hausverbrauch für den Verlauf (Aufteilung Netz/PV) |
-| `car.name`, `car.image` | Name und Bild des Autos |
+| `car.name`, `car.image` | Name und Bild des Autos (Bild ohne Angabe: Fahrzeugbild aus ev_assistant) |
 | `car.soc`, `range`, `status`, `cable` | Ladestand, Reichweite, Fahrstatus, Ladekabel (Standard: aus ev_assistant) |
 | `car.status_on` / `status_off` | Text für fahrend / geparkt |
 | `car.limit`, `mode`, `always`, `manual_mode` | Ladestrom, evcc-Lademodus, „Immer laden“, eigene Vorgabe |
@@ -154,4 +154,4 @@ car:
 | Version | Datei |
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.5.0  | mg-car-dashboard.js (eigenständig) |
+| 3.5.1  | mg-car-dashboard.js (eigenständig) |
