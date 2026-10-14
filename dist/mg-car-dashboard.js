@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=26  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=27  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.1";
+const VERSION = "3.5.2";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -1669,23 +1669,15 @@ class MgCarDashboard extends HTMLElement {
     const marks = [min != null && min > 0 && min < 100 ? `<i class="bm min" style="left:${min}%" title="Mindestladung ${Math.round(min)} %"></i>` : "",
       lim != null && lim > 0 && lim < 100 ? `<i class="bm lim" style="left:${lim}%" title="Ladeziel ${Math.round(lim)} %"></i>` : ""].join("");
 
-    // Infozeile: beim Laden Leistung/Energie/PV/Fertig, sonst letzte Fahrt bzw. letzte Ladung
+    // Infozeile: letzte Fahrt und letzte Ladung (beim Laden „jetzt“ – Leistung, Energie und PV stehen in der Kachel „Laden“)
     let line = "";
-    if (charging) {
-      const p = this._power(pw), se = this._fmt(ev.session_energy, 1), sp = this._fmt(ev.session_solar, 0), rem = this._fmt(ev.remaining);
-      const fin = this._st(ev.finish), finD = fin && !OFFLINE_HD.includes(fin.state) ? new Date(fin.state) : null;
-      line = `<div class="cline charge">
-        <span>${icon("mdi:flash")}<b>${p.v}</b> ${p.u}</span>
-        ${se ? `<span>${icon("mdi:battery-plus-variant")}<b>${se.v}</b> ${se.u || "kWh"}</span>` : ""}
-        ${sp ? `<span class="pv">${icon("mdi:solar-power-variant")}<b>${sp.v}</b> %</span>` : ""}
-        ${finD && !isNaN(finD) ? `<span>${icon("mdi:flag-checkered")}<b>${pad(finD.getHours())}:${pad(finD.getMinutes())}</b></span>` : rem ? `<span>${icon("mdi:timer-sand")}<b>${rem.v}</b> ${rem.u}</span>` : ""}
-      </div>`;
-    } else {
+    {
       const lt = this._fmt(E.last_trip_km, 0), lc = this._st(ev.last_charge);
       const lcD = lc && !OFFLINE_HD.includes(lc.state) ? new Date(lc.state) : null;
       const parts = [];
       if (lt) parts.push(`<span>${icon("mdi:map-marker-path")}Letzte Fahrt <b>${lt.v}</b> km</span>`);
-      if (lcD && !isNaN(lcD)) parts.push(`<span>${icon("mdi:ev-station")}Geladen <b>${this._ago(lcD)}</b></span>`);
+      if (charging) parts.push(`<span class="now">${icon("mdi:ev-station")}Letzte Ladung <b>jetzt</b></span>`);
+      else if (lcD && !isNaN(lcD)) parts.push(`<span>${icon("mdi:ev-station")}Letzte Ladung <b>${this._ago(lcD)}</b></span>`);
       if (parts.length) line = `<div class="cline">${parts.join("")}</div>`;
     }
 
@@ -2045,6 +2037,7 @@ ha-icon{--mdc-icon-size:22px;display:inline-flex}
 .cline ha-icon{--mdc-icon-size:16px;color:var(--dim)}
 .cline b{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums}
 .cline.charge ha-icon{color:var(--green)}
+.cline .now ha-icon,.cline .now b{color:var(--green)}
 .cline.charge .pv ha-icon,.cline.charge .pv b{color:var(--e-solar)}
 .cflags{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
 .chip.warn{color:var(--orange);background:rgba(251,146,60,.1);border-color:rgba(251,146,60,.3)}
