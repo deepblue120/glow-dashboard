@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=33  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=34  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.7.1";
+const VERSION = "3.7.2";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -321,6 +321,10 @@ class MgCarDashboard extends HTMLElement {
         if (v != null) vals[id] = v;
       }
       this._lastSess = { end, vals, src: "history" };
+      if (this._evaEntryId()) {   // Start-/End-SoC kennt nur das evcc-Ladelogbuch: passende Sitzung (Ende ± 2 h) suchen
+        const m = (await this._evccSessions()).filter((x) => x.finished && Math.abs(x.te - end) < 2 * 3600000).sort((a, b) => Math.abs(a.te - end) - Math.abs(b.te - end))[0];
+        if (m) Object.assign(this._lastSess, { s0: m.s0, s1: m.s1, sessDur: m.dur });
+      }
     } catch (e) { this._lastSess = { err: true }; }
     this._log("letzte Ladung", this._lastSess);
     this._update(true);
@@ -337,7 +341,7 @@ class MgCarDashboard extends HTMLElement {
       if (ev.session_solar) vals[ev.session_solar] = x.pv;
       if (ev.session_price) vals[ev.session_price] = x.price;
       if (ev.duration) vals[ev.duration] = x.dur;
-      this._lastSess = { end: x.te, vals, src: "evcc" };
+      this._lastSess = { end: x.te, vals, src: "evcc", kwh: x.kwh, durMin: x.dur ?? (x.te > x.ts ? (x.te - x.ts) / 60000 : null), s0: x.s0, s1: x.s1 };
     } catch (e) { this._lastSess = { err: true }; }
     this._log("letzte Ladung", this._lastSess);
     this._update(true);
@@ -435,10 +439,12 @@ class MgCarDashboard extends HTMLElement {
       const dur = x.dur == null ? "" : x.dur >= 60 ? `${Math.floor(x.dur / 60)}:${pad(Math.round(x.dur % 60))} h` : `${Math.round(x.dur)} min`;
       const per = x.per != null ? x.per : x.cost != null && x.kwh > 0.05 ? x.cost / x.kwh : null;
       const pv = x.pv != null ? Math.max(0, Math.min(100, x.pv)) : null;
+      const avgP = x.kwh != null && x.dur > 1 ? x.kwh / (x.dur / 60) : null, soc = x.s0 != null && x.s1 != null ? `${Math.round(x.s0)} → ${Math.round(x.s1)} %` : null;
       return `${mh}<div class="chr ${x.type}">
         <span class="chi">${icon(x.type === "home" ? "mdi:home-lightning-bolt" : "mdi:ev-station")}</span>
-        <span class="chd"><b>${WD[dt.getDay()]} ${dt.getDate()}. ${MON[dt.getMonth()]}</b><small>${pad(dt.getHours())}:${pad(dt.getMinutes())} Uhr${dur ? ` · ${dur}` : ""}${x.type === "ext" ? ` · ${esc(x.who)}` : ""}</small></span>
-        <span class="chpv">${pv != null ? `<i class="pvbar"><i style="width:${pv}%"></i></i><small>${Math.round(pv)} % PV</small>` : x.s0 != null && x.s1 != null ? `<small>${Math.round(x.s0)} → ${Math.round(x.s1)} %</small>` : ""}</span>
+        <span class="chd"><b>${WD[dt.getDay()]} ${dt.getDate()}. ${MON[dt.getMonth()]}</b><small>${pad(dt.getHours())}:${pad(dt.getMinutes())} Uhr${dur ? ` · ${dur}` : ""}${x.type === "ext" ? ` · ${esc(x.who)}` : ""}</small>${soc || avgP != null ? `<small class="chsm">${[soc, avgP != null && `Ø ${de(avgP, 1)} kW`].filter(Boolean).join(" · ")}</small>` : ""}</span>
+        <span class="chpv">${pv != null ? `<i class="pvbar"><i style="width:${pv}%"></i></i><small>${Math.round(pv)} % PV</small>` : ""}</span>
+        <span class="chs"><b>${soc || "–"}</b><small>${avgP != null ? `Ø ${de(avgP, 1)} kW` : ""}</small></span>
         <span class="chk"><b>${x.kwh == null ? "–" : de(x.kwh, 1)}</b><small>kWh</small></span>
         <span class="chc"><b>${x.cost == null ? "–" : de(x.cost, 2) + " €"}</b><small>${per != null ? `${de(per * 100, 1)} ct/kWh` : ""}</small></span>
       </div>`;
@@ -808,7 +814,8 @@ class MgCarDashboard extends HTMLElement {
     const val = (id) => (charging ? num(id) : L?.vals?.[id] ?? null);
     const kwh = val(ev.session_energy), pvp = val(ev.session_solar), cost = val(ev.session_price), dur = val(ev.duration);
     const durU = (this._st(ev.duration)?.attributes?.unit_of_measurement || "min").toLowerCase();
-    const durMin = dur == null ? null : durU === "h" ? dur * 60 : durU === "s" ? dur / 60 : dur;
+    // Dauer der letzten Ladung aus dem evcc-Ladelogbuch ist schon in Minuten (die Einheit des Sensors gilt dafür nicht)
+    const durMin = !charging && L?.durMin != null ? L.durMin : dur == null ? (!charging && L?.sessDur != null ? L.sessDur : null) : durU === "h" ? dur * 60 : durU === "s" ? dur / 60 : dur;
     const durTxt = durMin == null ? "–" : durMin >= 60 ? `${Math.floor(durMin / 60)}:${pad(Math.round(durMin % 60))} h` : `${Math.round(durMin)} min`;
     const cur = this._st(ev.session_price)?.attributes?.unit_of_measurement || "€";
 
@@ -844,12 +851,17 @@ class MgCarDashboard extends HTMLElement {
 
     // Kennzahlen
     const per = cost != null && kwh > 0.05 ? cost / kwh : null, avgP = kwh != null && durMin > 1 ? kwh / (durMin / 60) : null;
+    // SoC: letzte Ladung Start → Ende (evcc-Ladelogbuch), beim Laden aktueller SoC → Ladeziel
+    const socNow = num(c.soc), lim = parseFloat(this._st(c.limit)?.state);
+    const socTxt = charging ? (socNow == null ? "–" : `${Math.round(socNow)}${!isNaN(lim) && lim > socNow ? ` → ${Math.round(lim)}` : ""} %`)
+      : L?.s0 != null && L?.s1 != null ? `${Math.round(L.s0)} → ${Math.round(L.s1)} %` : "–";
     const fact = (lbl, v) => `<div class="lfact"><span>${lbl}</span><b>${v}</b></div>`;
     const facts = [
       fact("Dauer", durTxt, ev.duration),
       fact("Kosten", cost == null ? "–" : `${de(cost, 2)} ${esc(cur)}`, ev.session_price),
       fact("Preis", per == null ? "–" : `${de(per * 100, 1)} ct/kWh`),
       fact("Ø Leistung", avgP == null ? "–" : `${de(avgP, 1)} kW`),
+      fact("SoC", socTxt),
     ].join("");
 
     // Plan, Modus, Hinweise als schmale Zeilen
@@ -1200,7 +1212,8 @@ class MgCarDashboard extends HTMLElement {
       const list = (res?.sessions || []).filter((x) => !veh || !x.vehicle || String(x.vehicle).toLowerCase() === veh).map((x) => {
         const ts = x.created ? Date.parse(x.created) : NaN, te = x.finished ? Date.parse(x.finished) : Date.now();
         return { ts, te, kwh: x.chargedEnergy ?? null, pv: x.solarPercentage ?? null, price: x.price ?? null,
-          dur: typeof x.chargeDuration === "number" ? x.chargeDuration / 1e9 / 60 : null, finished: !!x.finished };
+          dur: typeof x.chargeDuration === "number" && x.chargeDuration > 0 ? x.chargeDuration / 1e9 / 60 : null, finished: !!x.finished,
+          s0: typeof x.socStart === "number" ? x.socStart : null, s1: typeof x.socEnd === "number" ? x.socEnd : null };
       }).filter((x) => !isNaN(x.ts) && x.te > x.ts);
       this._sess = { t: Date.now(), list };
     } catch (e) { this._sess = { t: Date.now(), list: [] }; }
@@ -2851,7 +2864,7 @@ const CAR_STYLE = `
 .chlist{display:flex;flex-direction:column;gap:6px}
 .chm{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:10px 4px 2px}
 .chm:first-child{margin-top:0}
-.chr{display:grid;grid-template-columns:40px minmax(0,1.4fr) minmax(0,1fr) 80px 96px;align-items:center;gap:12px;padding:9px 14px 9px 10px;border-radius:16px;background:var(--tile);border:1px solid var(--tileb)}
+.chr{display:grid;grid-template-columns:40px minmax(0,1.4fr) minmax(0,1fr) 100px 80px 96px;align-items:center;gap:12px;padding:9px 14px 9px 10px;border-radius:16px;background:var(--tile);border:1px solid var(--tileb)}
 .chi{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;background:rgba(52,211,153,.12);color:var(--green)}
 .chr.ext .chi{background:color-mix(in srgb,var(--e-grid-in) 16%,transparent);color:var(--e-grid-in)}
 .chi ha-icon{--mdc-icon-size:20px}
@@ -2862,11 +2875,13 @@ const CAR_STYLE = `
 .chpv .pvbar{display:block;height:6px;border-radius:4px;background:var(--e-grid-in);overflow:hidden}
 .chpv .pvbar i{display:block;height:100%;background:var(--e-solar)}
 .chpv small{font-size:12px;color:var(--muted)}
+.chs{display:flex;flex-direction:column;align-items:flex-end;font-variant-numeric:tabular-nums;white-space:nowrap}.chs b{font-size:14px;font-weight:600}.chs small{font-size:11.5px;color:var(--muted)}
 .chk,.chc{display:flex;flex-direction:column;align-items:flex-end;font-variant-numeric:tabular-nums}
 .chk b{font-size:17px;font-weight:700;color:var(--cyan)}
 .chc b{font-size:15px;font-weight:700}
 .chk small,.chc small{font-size:11.5px;color:var(--muted);white-space:nowrap}
-@media (max-width:760px){.chr{grid-template-columns:36px minmax(0,1fr) 64px 78px}.chpv{display:none}.chsum .hsegs{width:100%;margin-left:0}}
+.chsm{display:none}
+@media (max-width:760px){.chr{grid-template-columns:36px minmax(0,1fr) 64px 78px}.chpv,.chs{display:none}.chd .chsm{display:block}.chsum .hsegs{width:100%;margin-left:0}}
 .lst{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:12px;font-size:13.5px;font-weight:600;background:rgba(255,255,255,.05);color:var(--muted)}
 .lst ha-icon{--mdc-icon-size:16px}
 .lst.on{background:rgba(52,211,153,.14);color:var(--green)}
@@ -2905,7 +2920,7 @@ const CAR_STYLE = `
 .lsplitl ha-icon{--mdc-icon-size:15px}
 .lsplitl .pv ha-icon{color:var(--e-solar)}.lsplitl .gr ha-icon{color:var(--e-grid-in)}
 .lsplitl b{color:var(--text);font-variant-numeric:tabular-nums}
-.lfacts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.lfacts{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:12px}.lfacts .lfact{grid-column:span 2}.lfacts .lfact:nth-child(n+4){grid-column:span 3}
 .lfact{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:14px;background:var(--tile);border:1px solid var(--tileb);min-width:0}
 .lfact span{font-size:11.5px;color:var(--muted);font-weight:600;white-space:nowrap}
 .lfact b{font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2916,7 +2931,7 @@ const CAR_STYLE = `
 .lrow b{margin-left:auto;color:var(--text);font-weight:600;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lrow.warn ha-icon,.lrow.warn b{color:var(--orange)}
 .wrap.compact .lbig b{font-size:36px}.wrap.compact .lringw{width:80px;height:80px}.wrap.compact .lhero{padding:12px 14px}
-@container (max-width:720px){.lfacts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (max-width:720px){.lfacts{grid-template-columns:repeat(2,minmax(0,1fr))}.lfacts .lfact,.lfacts .lfact:nth-child(n+4){grid-column:auto}.lfacts .lfact:last-child{grid-column:1 / -1}}
 .carpage .cstats{grid-template-columns:repeat(2,minmax(0,1fr))}
 #trips{display:flex;flex-direction:column}
 .tlist{display:flex;flex-direction:column;gap:6px}
