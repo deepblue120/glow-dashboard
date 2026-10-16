@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=30  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=31  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.6.0";
+const VERSION = "3.6.1";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -1458,6 +1458,18 @@ class MgCarDashboard extends HTMLElement {
 
   _render_morrow() {
     const el = this.shadowRoot.getElementById("pmorrow");
+    if (this.shadowRoot.activeElement?.classList?.contains("pbufsel")) return;   // Auswahl offen: nicht neu zeichnen
+    if (!this._bufBound) {
+      this._bufBound = true;
+      el.addEventListener("change", (e) => {
+        const t = e.target; if (!t?.classList?.contains("pbufsel") || t.value === "") return;
+        const v = Number(t.value), id = this._evaEntryId(); t.blur();
+        if (!id) return;
+        this._bufSet = { v, t: Date.now() };
+        Promise.resolve(this._hass.callService("ev_assistant", "set_usage_profile_buffer_km", { config_entry_id: id, buffer_km: v }))
+          .catch((x) => { this._bufSet = null; this._render_morrow(); this._mgmtFail?.(x); });
+      });
+    }
     const rec = this._ea("charge_before_pv_recommended"), ra = rec?.attributes || {};
     const ma = this._ea("evcc_mode_control")?.attributes || {}, need = this._ea("usage_profile_tomorrow"), na = need?.attributes || {};
     const avK = parseFloat(this._ea("available_kwh")?.state), needK = parseFloat(need?.state), pvK = parseFloat(ra.pv_prognose_morgen_kwh);
@@ -1484,10 +1496,26 @@ class MgCarDashboard extends HTMLElement {
       reach = `<div class="sl2">Reicht laut Profil ${until ? `bis <b>${PWD_LONG[PWD.findIndex((x) => x[1] === until)]}</b>` : "<b>nicht bis morgen</b>"}</div>
         <div class="preach">${segs.map(([l, f]) => `<span><i style="width:${f * 100}%"></i><small>${l}</small></span>`).join("")}</div>`;
     }
+    // PV morgen abzüglich Hausverbrauch laut Hausprofil (was fürs Auto übrig bleibt)
+    const Hs = this._ea("house_usage_profile")?.attributes || {}, hsK = Hs.konfiguriert === true ? parseFloat(Hs[PWD[this._wdIdx().tomorrow][0]]) : NaN;
+    let pvTile = "";
+    if (!isNaN(pvK)) {
+      const net = isNaN(hsK) ? pvK : Math.max(0, pvK - hsK), kmPerKwh = pvK > 0 && typeof ra.pv_prognose_morgen_km === "number" ? ra.pv_prognose_morgen_km / pvK : null;
+      const k = this._roundKm(kmPerKwh != null ? net * kmPerKwh : NaN);
+      pvTile = `<div class="pst pv"><span>PV fürs Auto</span><b>${k != null ? k : de(net, 1)}<small>${k != null ? "km" : "kWh"}</small></b>
+        <em>${isNaN(hsK) ? `${de(pvK, 1)} kWh · ohne Hausprofil` : `${de(pvK, 1)} − ${de(hsK, 1)} kWh Haus`}</em></div>`;
+    }
+    // Puffer in km einstellbar (ev_assistant-Dienst set_usage_profile_buffer_km, 0–300 km in 5er-Schritten)
+    if (this._bufSet && (Date.now() - this._bufSet.t > 90000 || (bufKm && buf === this._bufSet.v))) this._bufSet = null;
+    const bufCur = this._bufSet ? this._bufSet.v : bufKm ? buf : null;
+    let opts = bufCur == null ? `<option value="" selected>${isNaN(buf) ? "–" : `${de(buf, 0)} %`}</option>` : "";
+    for (let v = 0; v <= 300; v += 5) opts += `<option value="${v}"${bufCur != null && Math.round(bufCur / 5) * 5 === v ? " selected" : ""}>${v} km</option>`;
+    const bufTile = this._evaEntryId() && this._hass?.services?.ev_assistant?.set_usage_profile_buffer_km
+      ? `<div class="pst pbuf"><span>Puffer</span><select class="pbufsel" aria-label="Puffer in km">${opts}</select>${bufKm && !isNaN(parseFloat(na.puffer_kwh)) ? `<em>${de(parseFloat(na.puffer_kwh), 1)} kWh</em>` : ""}</div>`
+      : `<div class="pst"><span>Puffer</span><b>${isNaN(buf) ? "–" : de(buf, 0)}<small>${bufKm ? "km" : "%"}</small></b></div>`;
     el.innerHTML = this._hd("Morgen", PWD_LONG[this._wdIdx().tomorrow]) + hero + `<div class="pstats">
       ${st("Verfügbar", avKm, avK)}${st("Bedarf morgen", na.benoetigt_km, needK)}
-      <div class="pst"><span>Puffer</span><b>${isNaN(buf) ? "–" : de(buf, 0)}<small>${bufKm ? "km" : "%"}</small></b></div>
-      ${!isNaN(pvK) ? st("PV morgen", ra.pv_prognose_morgen_km, pvK, "pv") : ""}</div>${reach}`;
+      ${bufTile}${pvTile}</div>${reach}`;
   }
 
   _anaData() {
@@ -2663,6 +2691,8 @@ const CAR_STYLE = `
 .pst span{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap}
 .pst b{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}.pst b small{font-size:11.5px;color:var(--muted);margin-left:3px;font-weight:500}
 .pst em{display:block;font-style:normal;font-size:11.5px;color:var(--muted)}.pst.pv b{color:var(--e-solar)}
+.pst .pbufsel{display:block;margin-top:1px;max-width:100%;font:inherit;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;color:inherit;background:transparent;border:0;border-bottom:1px dashed var(--muted);padding:0 2px 1px 0;cursor:pointer;outline:none}
+.pst .pbufsel:focus-visible{border-bottom-color:currentColor}.pst .pbufsel option{color:#111;background:#fff}
 .sl2{font-size:13px;color:var(--muted);margin:2px 2px 7px}.sl2 b{color:var(--text)}
 .preach{display:flex;gap:3px}
 .preach span{flex:1;position:relative;display:flex;flex-direction:column;gap:4px}
