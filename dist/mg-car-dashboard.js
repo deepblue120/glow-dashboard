@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=32  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=33  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.7.0";
+const VERSION = "3.7.1";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -259,8 +259,8 @@ class MgCarDashboard extends HTMLElement {
           <section class="panel" id="pana"></section><section class="panel" id="pmisch"></section>
         </div>
         <div class="grid sgrid" id="pset" hidden>
-          <div class="col"><section class="panel" id="swart"></section><section class="panel" id="slk"></section></div>
-          <div class="col"><section class="panel" id="simg"></section><section class="panel" id="sdata"></section><section class="panel" id="slog"></section></div>
+          <div class="col"><section class="panel" id="swart"></section><section class="panel" id="slk"></section><section class="panel" id="slog"></section></div>
+          <div class="col"><section class="panel" id="simg"></section><section class="panel" id="sdata"></section></div>
         </div>
       </div><dialog class="dlg" id="cardlg"></dialog>`;
     this._built = true;
