@@ -6,7 +6,7 @@
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.7.2";
+const VERSION = "3.5.9";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.

@@ -184,8 +184,8 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
-| 3.7.2  | Ladungen: Ø Ladeleistung und Start-/End-SoC bei der letzten Ladung und in „Alle Ladungen“ |
-| 3.7.1  | Einstellungen: Ereignisprotokoll links unten |
-| 3.7.0  | Unterseite „Einstellungen“ (Wartung, Ladekarten, Fahrzeugbild, Daten, Ereignisprotokoll) |
-| 3.6.1  | Profil & Analyse: PV morgen abzüglich Hausverbrauch, Puffer (0–300 km) direkt einstellbar |
-| 3.6.0  | Unterseite „Profil & Analyse“ |
+| 3.5.9  | Ladungen: Ø Ladeleistung und Start-/End-SoC bei der letzten Ladung und in „Alle Ladungen“ |
+| 3.5.8  | Einstellungen: Ereignisprotokoll links unten |
+| 3.5.7  | Unterseite „Einstellungen“ (Wartung, Ladekarten, Fahrzeugbild, Daten, Ereignisprotokoll) |
+| 3.5.6  | Profil & Analyse: PV morgen abzüglich Hausverbrauch, Puffer (0–300 km) direkt einstellbar |
+| 3.5.5  | Unterseite „Profil & Analyse“ |
