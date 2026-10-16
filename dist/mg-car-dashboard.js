@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=29  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=30  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.4";
+const VERSION = "3.6.0";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -16,6 +16,8 @@ const FONT_URL = "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;6
 const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 const WD_LONG = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 const MON = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+const PWD = [["montag", "Mo"], ["dienstag", "Di"], ["mittwoch", "Mi"], ["donnerstag", "Do"], ["freitag", "Fr"], ["samstag", "Sa"], ["sonntag", "So"]];
+const PWD_LONG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 const MON_LONG = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
 /* =====================================================================
@@ -233,13 +235,19 @@ class MgCarDashboard extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${STYLE}${CAR_STYLE}</style>
       <div class="wrap carpage">
         <div class="apiwarn" id="apiwarn" hidden></div>
-        <div class="grid">
+        <div class="pages"><div class="hsegs"><button class="hseg" data-act="page" data-p="main">Übersicht</button><button class="hseg" data-act="page" data-p="prof">Profil &amp; Analyse</button></div></div>
+        <div class="grid" id="pmain">
           <div class="col"><section class="panel car" id="car"></section><section class="panel grow" id="trips"></section></div>
           <div class="col"><section class="panel" id="live"></section><section class="panel" id="mgmt"></section></div>
           <div class="col"><section class="panel grow" id="hist"></section><section class="panel" id="lease" hidden></section><section class="panel" id="usage" hidden></section></div>
         </div>
+        <div class="grid pgrid" id="pprof" hidden>
+          <section class="panel" id="pweek"></section><section class="panel" id="pmorrow"></section>
+          <section class="panel" id="pana"></section><section class="panel" id="pmisch"></section>
+        </div>
       </div><dialog class="dlg" id="cardlg"></dialog>`;
     this._built = true;
+    this._showPage();
     requestAnimationFrame(() => { this._fit(); this._render_trips(); });
   }
 
@@ -264,6 +272,8 @@ class MgCarDashboard extends HTMLElement {
     this._render_hist();
     this._render_lease();
     this._render_usage();
+    if (this._subPage() === "prof") this._render_prof();
+    if (this._dlg === "ana") this._renderAnaDlg();
   }
 
   /* evcc setzt die Sitzungswerte nach dem Laden auf 0 → letzte echte Sitzung aus dem Verlauf holen */
@@ -1401,6 +1411,168 @@ class MgCarDashboard extends HTMLElement {
   }
 
 
+  /* ---------- Unterseite „Profil & Analyse“ (Daten aus ev_assistant) ---------- */
+  _subPage() {
+    if (this._pg) return this._pg;
+    let v = null; try { v = localStorage.getItem("mg-car-page"); } catch (e) {}
+    return (this._pg = v === "prof" ? "prof" : "main");
+  }
+  _showPage() {
+    const p = this._subPage(), sr = this.shadowRoot;
+    sr.getElementById("pmain").hidden = p !== "main";
+    sr.getElementById("pprof").hidden = p !== "prof";
+    sr.querySelectorAll('[data-act="page"]').forEach((b) => b.classList.toggle("sel", b.dataset.p === p));
+  }
+  _ea(key) { const id = this._eva()[key]; return id ? this._hass?.states[id] : null; }
+  _wdIdx() { const t = new Date().getDay(), today = t === 0 ? 6 : t - 1; return { today, tomorrow: (today + 1) % 7 }; }
+  _roundKm(km) { if (typeof km !== "number" || isNaN(km)) return null; km = Math.max(0, km); return km < 100 ? Math.round(km / 5) * 5 : Math.round(km / 10) * 10; }
+
+  _render_prof() {
+    this._render_week(); this._render_morrow(); this._render_ana(); this._render_misch();
+  }
+
+  _render_week() {
+    const el = this.shadowRoot.getElementById("pweek");
+    const P = this._ea("usage_profile")?.attributes || {}, Hs = this._ea("house_usage_profile")?.attributes || {};
+    const Pl = this._ea("plug_window")?.attributes || {}, Dp = this._ea("morning_departure")?.attributes?.je_wochentag || null;
+    const urlaub = !!this._ea("evcc_mode_control")?.attributes?.urlaub_aktiv;
+    const head = this._hd("Deine Woche", urlaub ? `<span class="pchip">Urlaub</span>` : "");
+    if (P.montag === undefined) { el.innerHTML = head + `<div class="empty">Noch nicht genug Fahrtenbuch-Historie (mindestens 7 Tage) für ein Nutzungsprofil.</div>`; return; }
+    const km = P.km_je_wochentag, hasKm = !!km && PWD.every(([k]) => typeof km[k] === "number");
+    const ev = PWD.map(([k]) => (hasKm ? km[k] : parseFloat(P[k]) || 0)), evMax = Math.max(0.1, ...ev);
+    const hs = PWD.map(([k]) => (Hs[k] !== undefined ? parseFloat(Hs[k]) : null)), hsMax = Math.max(0.1, ...hs.filter((x) => x != null));
+    const pl = PWD.map(([k]) => (Pl[k] !== undefined ? parseFloat(Pl[k]) : null));
+    const minN = this._ea("morning_departure")?.attributes?.mindestanzahl || 4;
+    const dep = (s) => !s ? "–" : s.status === "ok" && s.typisch ? s.typisch : s.status === "nicht_belastbar" ? `${s.n_gueltig}/${minN}` : s.status === "uneinheitlich" ? "?" : "–";
+    const { today, tomorrow } = this._wdIdx(), showHs = Hs.konfiguriert === true && hs.some((x) => x != null);
+    const days = PWD.map(([k, lbl], i) => {
+      const cls = i === tomorrow ? "tm" : i === today ? "td" : "";
+      return `<div class="pday ${cls}"><div class="pdn"><b>${lbl}</b>${i === tomorrow ? "<span>MORGEN</span>" : i === today ? "<span>HEUTE</span>" : ""}</div>
+        <div class="pmt ev"><small>Auto${hasKm ? " (ca.)" : ""}</small><b>${hasKm ? this._roundKm(ev[i]) : de(ev[i], 1)}<em>${hasKm ? "km" : "kWh"}</em></b><div class="pbar"><i style="width:${(ev[i] / evMax) * 100}%"></i></div></div>
+        ${showHs ? `<div class="pmt hs"><small>Haus</small><b>${hs[i] == null ? "–" : de(hs[i], 1)}<em>${hs[i] == null ? "" : "kWh"}</em></b><div class="pbar"><i style="width:${hs[i] == null ? 0 : (hs[i] / hsMax) * 100}%"></i></div></div>` : ""}
+        ${pl.some((x) => x != null) ? `<div class="pmt pl"><small>Steckt</small><b>${pl[i] == null ? "–" : de(pl[i], pl[i] >= 10 ? 0 : 1)}<em>${pl[i] == null ? "" : "h"}</em></b></div>` : ""}
+        ${Dp ? `<div class="pmt dp"><small>Abfahrt</small><b>${dep(Dp[k])}</b></div>` : ""}</div>`;
+    }).join("");
+    el.innerHTML = head + `<div class="pdays">${days}</div>`;
+  }
+
+  _render_morrow() {
+    const el = this.shadowRoot.getElementById("pmorrow");
+    const rec = this._ea("charge_before_pv_recommended"), ra = rec?.attributes || {};
+    const ma = this._ea("evcc_mode_control")?.attributes || {}, need = this._ea("usage_profile_tomorrow"), na = need?.attributes || {};
+    const avK = parseFloat(this._ea("available_kwh")?.state), needK = parseFloat(need?.state), pvK = parseFloat(ra.pv_prognose_morgen_kwh);
+    const avKm = typeof ra.verfuegbare_km === "number" ? ra.verfuegbare_km : typeof ma.reichweite_km === "number" ? ma.reichweite_km : null;
+    const st = (lbl, km, kwh, cls = "") => {
+      const k = this._roundKm(km), hasW = !isNaN(kwh);
+      return `<div class="pst ${cls}"><span>${lbl}</span><b>${k != null ? k : hasW ? de(kwh, 1) : "–"}<small>${k != null ? "km" : hasW ? "kWh" : ""}</small></b>${k != null && hasW ? `<em>${de(kwh, 1)} kWh</em>` : ""}</div>`;
+    };
+    const bufKm = na.puffer_art === "km" && !isNaN(parseFloat(na.puffer_km)), buf = bufKm ? parseFloat(na.puffer_km) : parseFloat(na.puffer_prozent);
+    const on = rec?.state === "on", known = rec && !OFFLINE_HD.includes(rec.state);
+    const hero = !known ? `<div class="phero"><div class="kick">Empfehlung</div><div class="pbig">Noch keine Empfehlung möglich</div></div>`
+      : `<div class="phero ${on ? "yes" : "no"}"><div class="kick">Empfehlung</div><div class="pbig">${on ? "Laden empfehlenswert" : "Laden kann warten"}</div>
+        <div class="psub">${on ? (isNaN(pvK) ? "Der Akku reicht laut Profil nicht sicher bis morgen." : "Akku plus PV-Prognose reichen laut Profil nicht sicher.") : (isNaN(pvK) ? "Akku reicht bis morgen – z. B. auf PV-Überschuss warten." : "Akku plus PV-Prognose decken den Bedarf.")}</div></div>`;
+    // wie weit reicht der Akku laut Profil (Tage ab morgen)
+    const P = this._ea("usage_profile")?.attributes || {}, kmD = P.km_je_wochentag;
+    let reach = "";
+    if (avKm != null && kmD) {
+      const { tomorrow } = this._wdIdx(); let left = avKm, segs = [], until = null;
+      for (let n = 0; n < 7; n++) {
+        const [k, l] = PWD[(tomorrow + n) % 7], d = Math.max(0, kmD[k] || 0);
+        const f = d > 0 ? Math.max(0, Math.min(1, left / d)) : 1; segs.push([l, f]); left -= d;
+        if (left < 0) break; until = PWD[(tomorrow + n) % 7][1];
+      }
+      reach = `<div class="sl2">Reicht laut Profil ${until ? `bis <b>${PWD_LONG[PWD.findIndex((x) => x[1] === until)]}</b>` : "<b>nicht bis morgen</b>"}</div>
+        <div class="preach">${segs.map(([l, f]) => `<span><i style="width:${f * 100}%"></i><small>${l}</small></span>`).join("")}</div>`;
+    }
+    el.innerHTML = this._hd("Morgen", PWD_LONG[this._wdIdx().tomorrow]) + hero + `<div class="pstats">
+      ${st("Verfügbar", avKm, avK)}${st("Bedarf morgen", na.benoetigt_km, needK)}
+      <div class="pst"><span>Puffer</span><b>${isNaN(buf) ? "–" : de(buf, 0)}<small>${bufKm ? "km" : "%"}</small></b></div>
+      ${!isNaN(pvK) ? st("PV morgen", ra.pv_prognose_morgen_km, pvK, "pv") : ""}</div>${reach}`;
+  }
+
+  _anaData() {
+    const L = this._ea("charging_location_breakdown")?.attributes || {}, R = this._ea("range_estimate")?.attributes || {};
+    return { L, R, heim: L.heim || {}, fremd: L.fremd || {}, acdc: L.ac_dc || {}, anb: Object.entries(L.anbieter || {}) };
+  }
+
+  _render_ana() {
+    const el = this.shadowRoot.getElementById("pana"), A = this._anaData(), num = (v, d) => (typeof v === "number" ? de(v, d) : "–");
+    const cap = parseFloat(this._ea("battery_capacity")?.state), cyc = parseFloat(this._ea("equivalent_full_cycles")?.state);
+    const bands = A.R.verbrauch_nach_temperatur || {}, band = A.R.temperaturband_aktuell, tNow = A.R.aussentemperatur;
+    const bv = band && typeof bands[band] === "number" ? bands[band] : null, warm = bands[">20°C"];
+    const anb = [...A.anb].sort((a, b) => (b[1].kwh ?? b[1].kosten ?? 0) - (a[1].kwh ?? a[1].kosten ?? 0));
+    const tile = (k, lbl, val, unit, sub, extra = "") => `<button class="ptile" data-act="ana" data-k="${k}"><span>${lbl}</span><b>${val}<small>${unit}</small></b><p>${sub}</p>${extra}<i class="pchev">›</i></button>`;
+    const tiles = [
+      tile("bat", "Batterie", isNaN(cap) ? "–" : de(cap, 1), "kWh", isNaN(cyc) ? "geschätzte Kapazität" : `${de(cyc, 0)} Vollzyklen`),
+      tile("temp", `Verbrauch${typeof tNow === "number" ? ` bei ${de(tNow, 0)} °C` : ""}`, bv != null ? de(bv, 1) : "–", "kWh/100km",
+        bv != null && typeof warm === "number" && band !== ">20°C" && warm > 0 ? `${bv >= warm ? "+" : ""}${Math.round((bv / warm - 1) * 100)} % ggü. > 20 °C` : band ? `Band ${esc(band)}` : "noch keine Daten"),
+      tile("cost", "Kosten", num(A.L.eur_je_100km, 2), "€/100km", `Heim ${num(A.heim.preis_je_kwh, 2)} · Fremd ${num(A.fremd.preis_je_kwh, 2)} €/kWh`),
+      tile("loc", "Autarkie gesamt", num(A.L.gesamt_autarkie_pct, 0), "%", `Heim-Solaranteil ${num(A.heim.solar_pct, 0)} %`),
+      tile("loc", "Ladeorte", num(A.heim.kwh_anteil_pct, 0), "% Heim", `${num(A.heim.kwh, 0)} / ${num(A.fremd.kwh, 0)} kWh`,
+        `<div class="pbar two"><i style="width:${A.heim.kwh_anteil_pct || 0}%"></i><i class="o" style="width:${A.fremd.kwh_anteil_pct || 0}%"></i></div>`),
+      A.acdc.dc || A.acdc.ac ? tile("acdc", "Schnellladen", num(A.acdc.dc?.anzahl, 0), "× DC", `${num(A.acdc.ac?.anzahl, 0)} × AC · DC Ø ${num(A.acdc.dc?.preis_je_kwh, 2)} €/kWh`) : "",
+      anb.length ? tile("anb", "Top-Anbieter", esc(anb[0][0]), "", `${anb[0][1].kosten != null ? de(anb[0][1].kosten, 0) + " €" : ""}${anb[0][1].kwh != null ? ` · ${de(anb[0][1].kwh, 0)} kWh` : ""}`) : "",
+    ].filter(Boolean);
+    el.innerHTML = this._hd("Analyse", "Kachel antippen für Details") + `<div class="ptiles">${tiles.join("")}</div>`;
+  }
+
+  /* Wirtschaftlichkeit Netz-Zuschuss: Skala Einspeisevergütung → Netzpreis, Marker Schwelle und Mischpreis */
+  _render_misch() {
+    const el = this.shadowRoot.getElementById("pmisch"), lv = this._live();
+    const fi = parseFloat(lv.tariff_feedin), gr = parseFloat(lv.tariff_grid);
+    if (isNaN(fi) || isNaN(gr) || gr <= fi) { el.innerHTML = this._hd("Netz-Zuschuss") + `<div class="empty">evcc meldet keine Tarife (Netzpreis und Einspeisevergütung).</div>`; return; }
+    const a = this._ea("evcc_mode_control")?.attributes || {};
+    const sur = typeof a.pv_ueberschuss_w === "number" ? a.pv_ueberschuss_w : null, minP = typeof a.wallbox_min_power_w === "number" ? a.wallbox_min_power_w : null;
+    const thr = typeof a.pv_override_max_mischpreis_kwh === "number" ? a.pv_override_max_mischpreis_kwh : null;
+    let cur = null;
+    if (sur != null && minP > 0) { const c = Math.max(0, Math.min(sur, minP)); cur = (c * fi + (minP - c) * gr) / minP; }
+    const pct = (v) => Math.max(0, Math.min(100, ((v - fi) / (gr - fi)) * 100));
+    const solarMin = thr != null ? Math.round((1 - pct(thr) / 100) * 100) : null;
+    const note = cur == null ? "Noch keine Live-Daten von evcc." : thr == null ? "Kein Mindest-Solaranteil konfiguriert – PV-Überschuss unter der Mindestladeleistung wird mit Netzstrom ergänzt."
+      : cur <= thr ? "Mischpreis innerhalb der Schwelle – ein Netz-Zuschuss würde genutzt." : "Mischpreis über der Schwelle – der Überschuss wird eingespeist statt teuren Netzstrom zuzukaufen.";
+    el.innerHTML = this._hd("Netz-Zuschuss", solarMin != null ? `lohnt ab <b>${solarMin} % PV</b>` : "") + `
+      <div class="mscale">${thr != null ? `<span class="ms" style="left:${pct(thr)}%"></span>` : ""}${cur != null ? `<span class="mc" style="left:${pct(cur)}%"></span>` : ""}</div>
+      <div class="mlab"><span>Einspeisung ${de(fi, 3)} €</span><span>Netz ${de(gr, 3)} €</span></div>
+      <div class="pstats two"><div class="pst"><span>Mischpreis jetzt</span><b>${cur != null ? de(cur, 3) : "–"}<small>€/kWh</small></b></div>
+        <div class="pst"><span>Schwelle</span><b>${thr != null ? de(thr, 3) : "–"}<small>€/kWh</small></b></div></div>
+      <div class="pnote">${note}</div>`;
+  }
+
+  _openAna(k) { this._anaK = k; this._openDlg("ana"); this._renderAnaDlg(); }
+  _renderAnaDlg() {
+    const d = this.shadowRoot.getElementById("cardlg");
+    if (!d || this._dlg !== "ana") return;
+    const A = this._anaData(), k = this._anaK, num = (v, dd) => (typeof v === "number" ? de(v, dd) : "–");
+    const col = (t, o, rows) => `<div class="pcol"><h4>${t}</h4>${rows.filter(Boolean).map(([l, v]) => `<p>${l}<b>${v}</b></p>`).join("")}</div>`;
+    let title = "", sub = "", body = "";
+    if (k === "temp") {
+      title = "Verbrauch nach Temperatur"; sub = "Ø kWh/100 km je Temperaturband (mind. 3 Fahrten)";
+      const B = A.R.verbrauch_nach_temperatur || {}, ks = ["<0°C", "0-10°C", "10-20°C", ">20°C"].filter((x) => B[x] !== undefined), mx = Math.max(0.1, ...ks.map((x) => B[x]));
+      body = ks.length ? `<div class="pbands">${ks.map((x) => `<div class="${x === A.R.temperaturband_aktuell ? "cur" : ""}"><em>${de(B[x], 1)}</em><i style="height:${(B[x] / mx) * 100}%"></i><small>${esc(x)}</small></div>`).join("")}</div>`
+        : `<div class="empty">Noch keine Außentemperatur konfiguriert oder zu wenige Fahrten je Temperaturband.</div>`;
+    } else if (k === "bat") {
+      title = "Batterie"; sub = "Geschätzte Kapazität und Vollzyklen";
+      body = `<div class="pcols">${col("Kapazität", 0, [["geschätzt", `${num(parseFloat(this._ea("battery_capacity")?.state), 1)} kWh`], ["Vollzyklen", num(parseFloat(this._ea("equivalent_full_cycles")?.state), 1)]])}</div>
+        <div class="pnote">Rollierender Schnitt aus Fremd- und Heimladungen mit großem SoC-Hub. Der Wert liegt meist über der echten Kapazität (Ladeverluste) – entscheidend ist der Trend über Monate. Vollzyklen aus Fahrtenbuch und Ladungen (0→100→0 = 1 Zyklus).</div>`;
+    } else if (k === "anb") {
+      title = "Verteilung nach Anbieter"; sub = "Nur tatsächliche Ladungskosten, ohne Grundgebühren";
+      const l = [...A.anb].sort((a, b) => (b[1].kwh ?? b[1].kosten ?? 0) - (a[1].kwh ?? a[1].kosten ?? 0)), byK = l.some(([, v]) => typeof v.kwh === "number");
+      const mx = Math.max(0.1, ...l.map(([, v]) => (byK ? v.kwh : v.kosten) || 0));
+      body = `<div class="panb">${l.map(([n, v]) => `<div><p><b>${esc(n)}</b><span>${byK ? `${num(v.kwh, 1)} kWh` : `${num(v.kosten, 2)} €`}${typeof v.preis_je_kwh === "number" ? ` · Ø ${de(v.preis_je_kwh, 3)} €/kWh` : ""}</span></p><i><em style="width:${(((byK ? v.kwh : v.kosten) || 0) / mx) * 100}%"></em></i></div>`).join("")}</div>`;
+    } else {
+      title = "Ladeorte"; sub = "Heim und Fremd über alle Ladungen";
+      const h = A.heim, f = A.fremd, ac = A.acdc.ac, dc = A.acdc.dc;
+      body = `<div class="pcols">${col(`Heim · ${num(h.kwh_anteil_pct, 0)} %`, 0, [["Energie", `${num(h.kwh, 1)} kWh`], ["Kosten", `${num(h.kosten, 2)} €`], ["Ø Preis", `${num(h.preis_je_kwh, 3)} €/kWh`], ["Solaranteil", `${num(h.solar_pct, 1)} %`]])}
+        ${col(`Fremd · ${num(f.kwh_anteil_pct, 0)} %`, 0, [["Energie", `${num(f.kwh, 1)} kWh`], ["Kosten", `${num(f.kosten, 2)} €`], ["Ø Preis", `${num(f.preis_je_kwh, 3)} €/kWh`]])}</div>
+        <div class="pcols">${col("Gesamt", 0, [["€/100 km", num(A.L.eur_je_100km, 2)], ["Autarkie", `${num(A.L.gesamt_autarkie_pct, 1)} %`]])}
+        ${ac || dc ? col("Fremd nach AC / DC", 0, [ac && ["AC", `${num(ac.anzahl, 0)} × · ${num(ac.kwh, 0)} kWh · Ø ${num(ac.preis_je_kwh, 2)} €`], dc && ["DC", `${num(dc.anzahl, 0)} × · ${num(dc.kwh, 0)} kWh · Ø ${num(dc.preis_je_kwh, 2)} €`]]) : ""}</div>
+        <div class="pnote">Solaranteil nur für Heimladungen, die evcc gesteuert hat. Fremdladung zählt beim Autarkiegrad als 0 % Solar. AC/DC geschätzt aus der Ø Ladeleistung je Ladung.</div>`;
+    }
+    d.innerHTML = `<div class="dpan pdlg"><div class="dhd"><span class="dico">${icon("mdi:chart-box-outline")}</span>
+      <span class="rtx"><span class="rname">${title}</span><span class="rsub">${sub}</span></span>
+      <button class="dx" data-act="cardclose" aria-label="Schließen">${icon("mdi:close")}</button></div><div class="dbody">${body}</div></div>`;
+  }
+
   /* ---------- Werte ---------- */
   _log(...a) { if (this._config?.debug) console.info("mg-car:", ...a); }
   /* Zustand einer Entität. Ist sie nur kurz nicht verfügbar (z. B. während ev_assistant nach einer
@@ -2011,6 +2183,8 @@ class MgCarDashboard extends HTMLElement {
       const id = this._real(this._config.car.soc) || this._eva().home_kwh; if (!id) return;
       const ev = new Event("hass-more-info", { bubbles: true, composed: true }); ev.detail = { entityId: id }; this.dispatchEvent(ev); return;
     }
+    if (act === "page") { this._pg = el.dataset.p; try { localStorage.setItem("mg-car-page", this._pg); } catch (x) {} this._showPage(); this._update(true); requestAnimationFrame(() => { this._fit(); this._render_trips(); }); return; }
+    if (act === "ana") { this._openAna(el.dataset.k); return; }
     if (act === "cardclose") { this.shadowRoot.getElementById("cardlg")?.close(); return; }
     if (!entity) return;
     if (act === "more") {
@@ -2458,6 +2632,73 @@ const CAR_STYLE = `
 #trips .tlist:hover .trip{border-color:rgba(255,255,255,.12)}
 @container (max-width:1180px){.wrap.carpage .grid{grid-template-columns:1fr 1fr}.wrap.carpage .col:nth-child(2){grid-column:1 / -1;order:1}}
 @container (max-width:720px){.wrap.carpage .grid{grid-template-columns:1fr}.carpage .soc{font-size:60px}.trip{grid-template-columns:44px 1fr auto;}.tkwh{display:none}.cstats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Unterseite Profil & Analyse */
+[hidden]{display:none!important}
+.pages{display:flex;margin:0 0 14px}
+.wrap.fit .pgrid{grid-template-rows:none}
+.wrap.fit .pages{flex:none}
+.pgrid{grid-template-columns:2.1fr 1fr!important;align-content:start}
+.wrap.fit .pgrid{overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+.pchip{display:inline-flex;padding:4px 10px;border-radius:10px;font-size:12.5px;font-weight:600;background:rgba(251,146,60,.12);color:var(--orange)}
+.pdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
+.pday{padding:12px 12px 14px;border-radius:20px;background:var(--tile);border:1px solid var(--tileb);display:flex;flex-direction:column;gap:9px;min-width:0}
+.pday.tm{border-color:rgba(52,211,153,.55);background:radial-gradient(120% 90% at 50% 0%,rgba(52,211,153,.14),transparent 70%),var(--tile)}
+.pday.td{border-color:rgba(255,255,255,.18)}
+.pdn{display:flex;align-items:baseline;justify-content:space-between;gap:4px}.pdn b{font-size:16px}.pdn span{font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--green)}
+.pday.td .pdn span{color:var(--muted)}
+.pmt{display:flex;flex-direction:column;gap:3px}
+.pmt small{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap}
+.pmt b{font-size:17px;font-variant-numeric:tabular-nums;white-space:nowrap}.pmt b em{font-style:normal;font-size:11px;color:var(--muted);margin-left:2px}
+.pbar{height:5px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;display:flex}.pbar i{display:block;height:100%}
+.pmt.ev b{color:var(--cyan)}.pmt.ev .pbar i{background:var(--cyan)}.pday.tm .pmt.ev .pbar i{background:var(--green)}
+.pmt.hs b{color:#c4b5fd}.pmt.hs .pbar i{background:var(--violet)}.pmt.dp b{color:var(--gold)}
+.phero{padding:15px 17px;border-radius:22px;background:var(--tile);border:1px solid var(--tileb);margin-bottom:12px}
+.phero.no{background:radial-gradient(120% 120% at 0% 0%,rgba(52,211,153,.14),transparent 60%),var(--tile);border-color:rgba(52,211,153,.35)}
+.phero.yes{background:radial-gradient(120% 120% at 0% 0%,rgba(251,146,60,.14),transparent 60%),var(--tile);border-color:rgba(251,146,60,.4)}
+.phero .kick{font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.pbig{font-size:22px;font-weight:700;margin:3px 0}.psub{font-size:13.5px;color:var(--muted)}
+.pstats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.pst{padding:9px 11px;border-radius:15px;background:var(--tile);border:1px solid var(--tileb);min-width:0}
+.pst span{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap}
+.pst b{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}.pst b small{font-size:11.5px;color:var(--muted);margin-left:3px;font-weight:500}
+.pst em{display:block;font-style:normal;font-size:11.5px;color:var(--muted)}.pst.pv b{color:var(--e-solar)}
+.sl2{font-size:13px;color:var(--muted);margin:2px 2px 7px}.sl2 b{color:var(--text)}
+.preach{display:flex;gap:3px}
+.preach span{flex:1;position:relative;display:flex;flex-direction:column;gap:4px}
+.preach span::after{content:"";position:absolute;left:0;right:0;top:0;height:8px;border-radius:4px;background:rgba(255,255,255,.07)}
+.preach span i{position:relative;z-index:1;display:block;height:8px;border-radius:4px;background:var(--green)}
+.preach small{font-size:11px;color:var(--dim);text-align:center}
+.ptiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.ptile{position:relative;padding:13px 14px;border-radius:20px;background:var(--tile);border:1px solid var(--tileb);min-width:0;transition:border-color .2s}
+.ptile:hover{border-color:rgba(56,189,248,.45)}
+.ptile > span{display:block;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px}
+.ptile b{display:block;font-size:25px;font-weight:800;margin:4px 0 2px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptile b small{font-size:13px;color:var(--muted);font-weight:600;margin-left:3px}
+.ptile p{margin:0;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptile .pbar{margin:6px 0}.pbar.two i{background:var(--green)}.pbar.two i.o{background:var(--orange)}
+.pchev{position:absolute;top:10px;right:13px;font-style:normal;color:var(--dim);font-size:18px}
+.mscale{position:relative;height:12px;border-radius:7px;background:linear-gradient(90deg,var(--e-solar),var(--e-grid-in));margin:10px 2px 6px}
+.mscale .ms,.mscale .mc{position:absolute;top:-5px;width:4px;height:22px;border-radius:2px;transform:translateX(-2px)}
+.mscale .ms{background:var(--orange)}.mscale .mc{background:#fff}
+.mlab{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-bottom:12px}
+.pstats.two{margin-bottom:8px}
+.pnote{font-size:12.5px;color:var(--dim);line-height:1.45}
+.pdlg{max-width:720px}
+.pcols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pcol{padding:12px 14px;border-radius:16px;background:var(--tile);border:1px solid var(--tileb)}
+.pcol h4{margin:0 0 6px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.pcol p{margin:3px 0;display:flex;gap:10px;font-size:13.5px;color:var(--muted)}.pcol p b{margin-left:auto;color:var(--text);font-variant-numeric:tabular-nums;text-align:right}
+.pbands{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;height:220px;align-items:end}
+.pbands div{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%}
+.pbands i{display:block;width:100%;border-radius:10px 10px 4px 4px;background:rgba(56,189,248,.55)}
+.pbands .cur i{background:var(--green);box-shadow:0 0 14px rgba(52,211,153,.45)}.pbands .cur small{color:var(--green)}
+.pbands em{font-style:normal;font-weight:700}.pbands small{font-size:12px;color:var(--dim);font-weight:600}
+.panb{display:flex;flex-direction:column;gap:8px}.panb > div{padding:10px 14px;border-radius:14px;background:var(--tile);border:1px solid var(--tileb)}
+.panb p{margin:0 0 6px;display:flex;gap:10px;font-size:14px}.panb p span{margin-left:auto;color:var(--muted);font-size:12.5px}
+.panb i{display:block;height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden}.panb em{display:block;height:100%;background:var(--cyan)}
+@container (max-width:1180px){.pgrid{grid-template-columns:1fr!important}.ptiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (max-width:720px){.pdays{grid-template-columns:repeat(4,minmax(0,1fr))}.pcols{grid-template-columns:1fr}}
 `;
 
 if (!customElements.get("mg-car-dashboard")) customElements.define("mg-car-dashboard", MgCarDashboard);

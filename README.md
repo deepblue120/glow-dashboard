@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=29`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=30`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -74,6 +74,20 @@ vehicles:
 
 Schlüssel ist der Fahrzeugname aus ev_assistant oder die `config_entry_id`; erlaubt sind alle `car`-Optionen
 (und `energy`). `evcc_loadpoint` wählt bei mehreren Ladepunkten das Ladeziel-Select der evcc-Integration.
+
+### Unterseite „Profil & Analyse“
+
+Oben rechts schaltet die Karte zwischen **Übersicht** und **Profil & Analyse** um (die Auswahl merkt sich der Browser).
+Die Unterseite zeigt die Daten aus den ev_assistant-Reitern „Nutzungsprofil“ und „Analyse“:
+
+| Bereich | Inhalt (Quelle: ev_assistant) |
+|---|---|
+| Deine Woche | je Wochentag Ø Bedarf des Autos (ca. km, sonst kWh), Hausverbrauch, Steckdauer und typische Abfahrt; heute und morgen markiert |
+| Morgen | Ladeempfehlung, verfügbar / Bedarf / Puffer / PV-Prognose (km, kWh daneben) und wie weit der Akku laut Profil reicht |
+| Analyse | Kacheln für Batterie, Verbrauch bei aktueller Temperatur, Kosten, Autarkie, Ladeorte, Schnellladen und Top-Anbieter – antippen öffnet die Details |
+| Netz-Zuschuss | Skala von Einspeisevergütung bis Netzpreis mit Schwelle und aktuellem Mischpreis (Tarife aus evcc) |
+
+Fehlende Werte blendet die Karte aus bzw. zeigt „–“ (z. B. ohne Hauszähler oder Außentemperatur in ev_assistant).
 
 ### Einbettung in ev_assistant
 
@@ -155,3 +169,4 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
+| 3.6.0  | Unterseite „Profil & Analyse“ |
