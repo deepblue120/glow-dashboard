@@ -77,7 +77,7 @@ Schlüssel ist der Fahrzeugname aus ev_assistant oder die `config_entry_id`; erl
 
 ### Unterseite „Profil & Analyse“
 
-Oben rechts schaltet die Karte zwischen **Übersicht** und **Profil & Analyse** um (die Auswahl merkt sich der Browser).
+Oben rechts schaltet die Karte zwischen **Übersicht**, **Profil & Analyse** und **Einstellungen** um (die Auswahl merkt sich der Browser).
 Die Unterseite zeigt die Daten aus den ev_assistant-Reitern „Nutzungsprofil“ und „Analyse“:
 
 | Bereich | Inhalt (Quelle: ev_assistant) |
@@ -88,6 +88,21 @@ Die Unterseite zeigt die Daten aus den ev_assistant-Reitern „Nutzungsprofil“
 | Netz-Zuschuss | Skala von Einspeisevergütung bis Netzpreis mit Schwelle und aktuellem Mischpreis (Tarife aus evcc) |
 
 Fehlende Werte blendet die Karte aus bzw. zeigt „–“ (z. B. ohne Hauszähler oder Außentemperatur in ev_assistant).
+
+### Unterseite „Einstellungen“
+
+Die dritte Seite bündelt die ev_assistant-Reiter „Wartung“, „Ladekarten“ und „Einstellungen“. Anlegen und Bearbeiten
+laufen in einem Popup über die Dienste von ev_assistant (für das gerade gewählte Fahrzeug):
+
+| Bereich | Inhalt / Aktionen |
+|---|---|
+| Wartung | Wartungspunkte mit Status (OK / bald fällig / überfällig), Fälligkeit, Kriterien und letztem Service; anlegen (mit Vorlagen HU und Inspektion), bearbeiten, als erledigt markieren, löschen |
+| Ladekarten | aufgelaufene Grundgebühren gesamt, je Karte aktuelle Gebühr, Zeitraum und Preisstufen; anlegen, bearbeiten, Preisänderung hinzufügen/entfernen, löschen |
+| Fahrzeugbild | Bild hochladen (JPEG/PNG/WebP bis 10 MB) oder entfernen |
+| Daten | Backup erstellen (Download), Backup wiederherstellen (mit Bestätigung „WIEDERHERSTELLEN“), Kennzahlen seit Einrichtung zurücksetzen |
+| Ereignisprotokoll | die letzten ca. 14 Tage mit Filter nach Kategorie und Suche; als Textdatei herunterladen |
+
+Die „Sichtbare Tabs“-Einstellung betrifft nur das ev_assistant-Panel und fehlt deshalb hier.
 
 ### Einbettung in ev_assistant
 
@@ -169,5 +184,6 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
+| 3.7.0  | Unterseite „Einstellungen“ (Wartung, Ladekarten, Fahrzeugbild, Daten, Ereignisprotokoll) |
 | 3.6.1  | Profil & Analyse: PV morgen abzüglich Hausverbrauch, Puffer (0–300 km) direkt einstellbar |
 | 3.6.0  | Unterseite „Profil & Analyse“ |

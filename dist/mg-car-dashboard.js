@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=31  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=32  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.6.1";
+const VERSION = "3.7.0";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -226,6 +226,19 @@ class MgCarDashboard extends HTMLElement {
       this.shadowRoot.addEventListener("error", (e) => { if (e.target?.classList?.contains("carimg")) this._carImageError(e.target); }, true);
     }
     if (!this._pinBound) { this._pinBound = true; this.shadowRoot.addEventListener("change", (e) => { const t = e.composedPath()[0]; if (t?.classList?.contains("pin")) { this._planTime = t.value; t.blur(); } }); }
+    if (!this._setBound) {   // Eingaben der Einstellungen-Seite (Dateiauswahl, Filter, Vorlage im Formular)
+      this._setBound = true;
+      const on = (e) => {
+        const t = e.composedPath()[0], c = t?.classList;
+        if (!c) return;
+        if (e.type === "change" && c.contains("simgfile")) { const f = t.files?.[0]; t.value = ""; this._uploadImg(f); }
+        else if (e.type === "change" && c.contains("srestfile")) { const f = t.files?.[0]; t.value = ""; this._readRestore(f); }
+        else if (e.type === "change" && c.contains("fpreset")) this._wtPreset(t.value, true);
+        else if (e.type === "change" && c.contains("slogkat")) { this._logKat = t.value; this._renderLogList(); }
+        else if (e.type === "input" && c.contains("slogq")) { this._logQ = t.value; this._renderLogList(); }
+      };
+      this.shadowRoot.addEventListener("change", on); this.shadowRoot.addEventListener("input", on);
+    }
     if (!this._hoverBound) {
       this._hoverBound = true;
       this.shadowRoot.addEventListener("pointermove", (e) => this._barHover(e));
@@ -235,7 +248,7 @@ class MgCarDashboard extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${STYLE}${CAR_STYLE}</style>
       <div class="wrap carpage">
         <div class="apiwarn" id="apiwarn" hidden></div>
-        <div class="pages"><div class="hsegs"><button class="hseg" data-act="page" data-p="main">Übersicht</button><button class="hseg" data-act="page" data-p="prof">Profil &amp; Analyse</button></div></div>
+        <div class="pages"><div class="hsegs"><button class="hseg" data-act="page" data-p="main">Übersicht</button><button class="hseg" data-act="page" data-p="prof">Profil &amp; Analyse</button><button class="hseg" data-act="page" data-p="set">Einstellungen</button></div></div>
         <div class="grid" id="pmain">
           <div class="col"><section class="panel car" id="car"></section><section class="panel grow" id="trips"></section></div>
           <div class="col"><section class="panel" id="live"></section><section class="panel" id="mgmt"></section></div>
@@ -244,6 +257,10 @@ class MgCarDashboard extends HTMLElement {
         <div class="grid pgrid" id="pprof" hidden>
           <section class="panel" id="pweek"></section><section class="panel" id="pmorrow"></section>
           <section class="panel" id="pana"></section><section class="panel" id="pmisch"></section>
+        </div>
+        <div class="grid sgrid" id="pset" hidden>
+          <div class="col"><section class="panel" id="swart"></section><section class="panel" id="slk"></section></div>
+          <div class="col"><section class="panel" id="simg"></section><section class="panel" id="sdata"></section><section class="panel" id="slog"></section></div>
         </div>
       </div><dialog class="dlg" id="cardlg"></dialog>`;
     this._built = true;
@@ -273,6 +290,7 @@ class MgCarDashboard extends HTMLElement {
     this._render_lease();
     this._render_usage();
     if (this._subPage() === "prof") this._render_prof();
+    if (this._subPage() === "set") this._render_set();
     if (this._dlg === "ana") this._renderAnaDlg();
   }
 
@@ -1415,12 +1433,13 @@ class MgCarDashboard extends HTMLElement {
   _subPage() {
     if (this._pg) return this._pg;
     let v = null; try { v = localStorage.getItem("mg-car-page"); } catch (e) {}
-    return (this._pg = v === "prof" ? "prof" : "main");
+    return (this._pg = v === "prof" || v === "set" ? v : "main");
   }
   _showPage() {
     const p = this._subPage(), sr = this.shadowRoot;
     sr.getElementById("pmain").hidden = p !== "main";
     sr.getElementById("pprof").hidden = p !== "prof";
+    sr.getElementById("pset").hidden = p !== "set";
     sr.querySelectorAll('[data-act="page"]').forEach((b) => b.classList.toggle("sel", b.dataset.p === p));
   }
   _ea(key) { const id = this._eva()[key]; return id ? this._hass?.states[id] : null; }
@@ -1599,6 +1618,322 @@ class MgCarDashboard extends HTMLElement {
     d.innerHTML = `<div class="dpan pdlg"><div class="dhd"><span class="dico">${icon("mdi:chart-box-outline")}</span>
       <span class="rtx"><span class="rname">${title}</span><span class="rsub">${sub}</span></span>
       <button class="dx" data-act="cardclose" aria-label="Schließen">${icon("mdi:close")}</button></div><div class="dbody">${body}</div></div>`;
+  }
+
+  /* ---------- Unterseite „Einstellungen“ (Wartung, Ladekarten, Einstellungen aus ev_assistant) ---------- */
+  _render_set() {
+    this._render_wart(); this._render_lk(); this._render_img(); this._render_data(); this._render_log();
+  }
+  // nur neu zeichnen, wenn sich die Daten geändert haben (sonst gingen offene Datei-Auswahlen verloren)
+  _setSig(el, sig) { if (el._sig === sig) return false; el._sig = sig; return true; }
+  _fdate(iso) { if (!iso) return "–"; const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleDateString("de-DE"); }
+  _fmonth(iso) { if (!iso) return "–"; const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleDateString("de-DE", { month: "2-digit", year: "numeric" }); }
+  _toast(message) { this.dispatchEvent(new CustomEvent("hass-notification", { detail: { message }, bubbles: true, composed: true })); }
+  // ev_assistant-Dienst für das gewählte Fahrzeug aufrufen; Fehler im offenen Formular bzw. als Hinweis zeigen
+  _evaCall(service, data = {}) {
+    const config_entry_id = this._evaEntryId();
+    if (!config_entry_id) { this._toast("ev_assistant nicht gefunden"); return Promise.reject(new Error("ev_assistant nicht gefunden")); }
+    return Promise.resolve(this._hass.callService("ev_assistant", service, { config_entry_id, ...data })).catch((x) => {
+      const msg = x?.message || x?.error?.message || String(x);
+      const err = this._dlg === "form" && this.shadowRoot.querySelector("#cardlg .ferr");
+      if (err) err.textContent = msg; else this._toast(msg);
+      throw x;
+    });
+  }
+
+  /* Wartung */
+  _wartData() {
+    const a = this._ea("wartung_faellig")?.attributes || {};
+    return { punkte: Array.isArray(a.punkte) ? a.punkte : [], presets: Array.isArray(a.presets) ? a.presets : [] };
+  }
+  _render_wart() {
+    const el = this.shadowRoot.getElementById("swart"), { punkte } = this._wartData();
+    if (!this._setSig(el, this._evaEntryId() + JSON.stringify(punkte))) return;
+    const ST = { ok: ["OK", "ok"], bald_faellig: ["Bald fällig", "soon"], ueberfaellig: ["Überfällig", "over"], unbekannt: ["Unbekannt", ""] };
+    const add = `<button class="sbt" data-act="set" data-k="wt-add">${icon("mdi:plus")}Anlegen</button>`;
+    if (!punkte.length) { el.innerHTML = this._hd("Wartung", add) + `<div class="empty">Noch kein Wartungspunkt angelegt – z. B. HU oder Inspektion, fällig nach Kilometerstand, Zeit oder beidem (je nachdem, was zuerst kommt).</div>`; return; }
+    const items = punkte.map((p) => {
+      const [lbl, cls] = ST[p.status] || [esc(p.status), ""];
+      let when = "";
+      if (p.status !== "unbekannt") {
+        if (p.rest_tage != null) when = `${p.rest_tage >= 0 ? "in" : "vor"} ${Math.abs(p.rest_tage)} Tag${Math.abs(p.rest_tage) === 1 ? "" : "en"}${p.faellig_datum ? ` (${p.naechste_quelle === "fest" ? this._fmonth(p.faellig_datum) : this._fdate(p.faellig_datum)})` : ""}`;
+        else if (p.rest_km != null) when = `${p.rest_km >= 0 ? "in" : "vor"} ${de(Math.abs(p.rest_km), 0)} km`;
+        if (p.rest_tage != null && p.rest_km != null) {
+          const ziel = p.last_done?.km != null && p.km_intervall ? p.last_done.km + p.km_intervall : null;
+          when += ` · ${p.rest_km >= 0 ? `noch ${de(p.rest_km, 0)} km` : `${de(-p.rest_km, 0)} km über`}${ziel != null ? ` ${p.rest_km >= 0 ? "bis" : ""} ${de(ziel, 0)} km`.replace("  ", " ") : ""}`;
+        }
+      }
+      const krit = [p.km_intervall && `alle ${de(p.km_intervall, 0)} km`, p.zeit_intervall_monate && `alle ${p.zeit_intervall_monate} Monate`, p.festes_datum && `fest ${this._fmonth(p.festes_datum)}`].filter(Boolean).join(" · ") || "kein Kriterium";
+      const last = [p.last_done?.km != null && `${de(p.last_done.km, 0)} km`, p.last_done?.datum && this._fdate(p.last_done.datum)].filter(Boolean).join(" · ") || "–";
+      return `<div class="sitem ${cls}${p.aktiv === false ? " off" : ""}"><div class="stop"><i class="sdot"></i><b>${esc(p.name)}</b>${p.aktiv === false ? `<span class="stag">pausiert</span>` : ""}
+          <span class="sacts"><button class="sic" data-act="set" data-k="wt-done" data-id="${p.id}" title="Als erledigt markieren">${icon("mdi:check")}</button><button class="sic" data-act="set" data-k="wt-edit" data-id="${p.id}" title="Bearbeiten">${icon("mdi:pencil")}</button><button class="sic" data-act="set" data-k="wt-del" data-id="${p.id}" title="Löschen">${icon("mdi:delete-outline")}</button></span></div>
+        <div class="sstat"><b>${lbl}</b>${when ? ` · ${when}` : ""}</div>
+        <div class="smeta"><span>${krit}</span><span>Letzter Service: ${last}</span>${p.kosten != null ? `<span>${de(p.kosten, 2)} €</span>` : ""}</div></div>`;
+    }).join("");
+    const due = punkte.filter((p) => p.aktiv !== false && (p.status === "bald_faellig" || p.status === "ueberfaellig")).length;
+    el.innerHTML = this._hd("Wartung", add, null) + (due ? `<div class="snote warn">${icon("mdi:wrench-clock")}${due} Punkt${due > 1 ? "e" : ""} bald fällig oder überfällig</div>` : "") + `<div class="slist">${items}</div>`;
+  }
+
+  /* Ladekarten */
+  _render_lk() {
+    const el = this.shadowRoot.getElementById("slk"), a = this._ea("ladekarten_kosten")?.attributes || {};
+    const karten = Array.isArray(a.karten) ? a.karten : [];
+    if (!this._setSig(el, this._evaEntryId() + JSON.stringify(karten) + a.gesamt)) return;
+    const add = `<button class="sbt" data-act="set" data-k="lk-add">${icon("mdi:plus")}Anlegen</button>`;
+    if (!karten.length) { el.innerHTML = this._hd("Ladekarten", add) + `<div class="empty">Noch keine Ladekarte angelegt – z. B. eine Abo-Karte mit monatlicher Grundgebühr. Die aufgelaufene Gebühr fließt in die Fremdlade-Kosten ein (Ersparnis, €/100 km), aber nicht in den Preis je kWh.</div>`; return; }
+    const today = new Date().toISOString().slice(0, 10);
+    const items = karten.map((k) => {
+      const aktiv = !k.end_datum || k.end_datum >= today, st = [...(k.gebuehren || [])].sort((x, y) => (x.ab_datum < y.ab_datum ? -1 : 1));
+      const stufen = st.map((s, i) => `<span class="schip">ab ${this._fdate(s.ab_datum)} · <b>${de(s.gebuehr, 2)} €</b>${i ? `<button class="sx" data-act="set" data-k="lk-sdel" data-id="${k.id}" data-ab="${esc(s.ab_datum)}" title="Preisstufe entfernen">${icon("mdi:close")}</button>` : ""}</span>`).join("");
+      return `<div class="sitem${aktiv ? "" : " off"}"><div class="stop"><b>${esc(k.name)}</b>${aktiv ? "" : `<span class="stag">gekündigt</span>`}<span class="scost">${de(k.kosten ?? 0, 2)} €</span>
+          <span class="sacts"><button class="sic" data-act="set" data-k="lk-edit" data-id="${k.id}" title="Bearbeiten">${icon("mdi:pencil")}</button><button class="sic" data-act="set" data-k="lk-del" data-id="${k.id}" title="Löschen">${icon("mdi:delete-outline")}</button></span></div>
+        <div class="smeta"><span>${de(k.aktuelle_gebuehr ?? 0, 2)} €/Monat aktuell</span><span>seit ${this._fdate(k.start_datum)}${k.end_datum ? ` bis ${this._fdate(k.end_datum)}` : ""}</span></div>
+        <div class="schips">${stufen}<button class="schip add" data-act="set" data-k="lk-stufe" data-id="${k.id}">${icon("mdi:plus")}Preisänderung</button></div></div>`;
+    }).join("");
+    el.innerHTML = this._hd("Ladekarten", add) + `<div class="skpi"><b>${de(a.gesamt ?? 0, 2)}<small>€</small></b><span>Grundgebühren aufgelaufen</span></div><div class="slist">${items}</div>`;
+  }
+
+  /* Fahrzeugbild */
+  _render_img() {
+    const el = this.shadowRoot.getElementById("simg"), st = this._ea("vehicle_image");
+    const src = st && !OFFLINE_HD.includes(st.state) ? st.attributes?.entity_picture : null;
+    if (!this._setSig(el, (src || "") + "|" + (this._imgStatus || "") + this._imgBusy)) return;
+    el.innerHTML = this._hd("Fahrzeugbild") + `<div class="simgbox">${src ? `<img src="${esc(src)}" alt="Fahrzeugbild">` : `<span class="dim">Kein Bild gesetzt</span>`}</div>
+      <div class="pnote">JPEG, PNG oder WebP bis 10 MB. ev_assistant verkleinert es und entfernt alle Metadaten (z. B. GPS); Transparenz bleibt erhalten.</div>
+      <div class="srow"><label class="sbt${this._imgBusy ? " dis" : ""}">${icon("mdi:image-plus-outline")}Bild auswählen…<input type="file" class="simgfile" accept="image/jpeg,image/png,image/webp" hidden ${this._imgBusy ? "disabled" : ""}></label>
+      ${src ? `<button class="sbt" data-act="set" data-k="img-clear" ${this._imgBusy ? "disabled" : ""}>${icon("mdi:delete-outline")}Entfernen</button>` : ""}</div>
+      ${this._imgStatus ? `<div class="pnote">${esc(this._imgStatus)}</div>` : ""}`;
+  }
+  async _uploadImg(file) {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { this._imgStatus = "Dieses Dateiformat wird nicht unterstützt. Erlaubt sind JPEG, PNG und WebP."; return this._render_img(); }
+    if (file.size > 10 * 1024 * 1024) { this._imgStatus = "Die Bilddatei ist zu groß (maximal 10 MB)."; return this._render_img(); }
+    this._imgBusy = true; this._imgStatus = "Wird hochgeladen…"; this._render_img();
+    try {
+      const form = new FormData(); form.append("file", file);
+      const resp = this._hass.fetchWithAuth ? await this._hass.fetchWithAuth("/api/file_upload", { method: "POST", body: form })
+        : await fetch("/api/file_upload", { method: "POST", body: form, headers: { Authorization: `Bearer ${this._hass.auth?.data?.access_token}` } });
+      if (!resp.ok) throw new Error(`Upload fehlgeschlagen (HTTP ${resp.status}).`);
+      const { file_id } = await resp.json();
+      await this._evaCall("set_vehicle_image", { file_id });
+      this._imgStatus = "Bild gesetzt.";
+    } catch (x) { this._imgStatus = x?.message || String(x); }
+    this._imgBusy = false; this._render_img();
+  }
+
+  /* Kennzahlen und Datensicherung */
+  _render_data() {
+    const el = this.shadowRoot.getElementById("sdata");
+    if (!this._setSig(el, "1" + (this._dataBusy || ""))) return;
+    const b = this._dataBusy;
+    el.innerHTML = this._hd("Daten") + `<div class="sblk"><h4>Datensicherung</h4><div class="pnote">Sichert Fahrtenbuch, Ladehistorie, Ladekarten, Wartungsplan, Kennzahlen und Ereignisprotokoll als Datei – ohne die Konfiguration (evcc-Host, Entitäten).</div>
+        <div class="srow"><button class="sbt" data-act="set" data-k="backup" ${b ? "disabled" : ""}>${icon("mdi:database-arrow-down-outline")}${b === "backup" ? "Wird erstellt…" : "Backup erstellen"}</button>
+        <label class="sbt">${icon("mdi:database-arrow-up-outline")}Wiederherstellen…<input type="file" class="srestfile" accept="application/json" hidden></label></div></div>
+      <div class="sblk"><h4>Kennzahlen seit Einrichtung</h4><div class="pnote">Setzt Verbrauch, Ersparnis und CO₂-Ersparnis auf einen neuen Startpunkt – z. B. wenn sie durch fehlerhafte Sensordaten kurz nach der Einrichtung verzerrt sind. Fahrtenbuch, Ladehistorie, Leasing und Wartung bleiben unverändert.</div>
+        <div class="srow"><button class="sbt" data-act="set" data-k="reset">${icon("mdi:restart-alert")}Zurücksetzen…</button></div></div>`;
+  }
+  // Datei, die ev_assistant unter /config/www ablegt, herunterladen
+  _download(name) {
+    const a = document.createElement("a"); a.href = `/local/${name}?t=${Date.now()}`; a.download = name; a.target = "_blank";
+    this.shadowRoot.appendChild(a); a.click(); a.remove();
+  }
+  _readRestore(file) {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => {
+      const text = String(r.result); let ok = false;
+      try { const p = JSON.parse(text); ok = !!p && typeof p === "object" && "history" in p; } catch (x) {}
+      if (!ok) { this._toast("Ungültige Datei – keine ev_assistant-Sicherung."); return; }
+      this._restore = { text, name: file.name, kb: Math.round(file.size / 1024) };
+      this._openForm("restore");
+    };
+    r.readAsText(file);
+  }
+
+  /* Ereignisprotokoll */
+  async _loadLog(force) {
+    const id = this._evaEntryId();
+    if (!id || !this._hass?.callWS || this._logBusy) return;
+    if (!force && this._log_?.entry === id && Date.now() - this._log_.t < 30000) return;
+    this._logBusy = true;
+    let list = [];
+    try { const r = await this._hass.callWS({ type: "ev_assistant/event_log", config_entry_id: id }); list = Array.isArray(r?.event_log) ? r.event_log : []; } catch (x) {}
+    this._logBusy = false; this._log_ = { entry: id, t: Date.now(), list };
+    this._renderLogList();
+  }
+  _render_log() {
+    const el = this.shadowRoot.getElementById("slog");
+    if (!el.querySelector(".sloglist")) {
+      el.innerHTML = this._hd("Ereignisprotokoll", `<button class="sbt" data-act="set" data-k="log-dl">${icon("mdi:file-download-outline")}Herunterladen</button>`)
+        + `<div class="pnote">Die letzten ca. 14 Tage: Moduswechsel, erkannte Fremdladungen und Fahrten, Probleme.</div>
+        <div class="srow"><select class="slogkat"><option value="alle">Alle Kategorien</option></select><input type="search" class="slogq" placeholder="Suchen…"></div><div class="sloglist"><div class="empty">Lädt…</div></div>`;
+    }
+    this._loadLog();
+  }
+  _renderLogList() {
+    const el = this.shadowRoot.getElementById("slog"), box = el?.querySelector(".sloglist");
+    if (!box) return;
+    const list = this._log_?.list, sel = el.querySelector(".slogkat");
+    if (!list) return;
+    const kats = [...new Set(list.map((e) => e.kategorie))].sort(), cur = this._logKat || "alle";
+    const ksig = kats.join("|");
+    if (sel._k !== ksig) { sel._k = ksig; sel.innerHTML = `<option value="alle">Alle Kategorien</option>` + kats.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join(""); }
+    sel.value = kats.includes(cur) ? cur : "alle";
+    const q = (this._logQ || "").trim().toLowerCase();
+    const f = list.filter((e) => (sel.value === "alle" || e.kategorie === sel.value) && (!q || String(e.text).toLowerCase().includes(q) || String(e.kategorie).toLowerCase().includes(q))).sort((a, b) => b.ts - a.ts);
+    const top = box.scrollTop < 4;
+    box.innerHTML = !list.length ? `<div class="empty">Noch keine Einträge.</div>` : !f.length ? `<div class="empty">Keine Einträge für diesen Filter.</div>`
+      : f.slice(0, 300).map((e) => { const d = new Date(e.ts * 1000); return `<div class="sline"><span>${d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span><em>${esc(e.kategorie)}</em><p>${esc(e.text)}</p></div>`; }).join("");
+    if (top) box.scrollTop = 0;
+  }
+
+  /* Formulare im Popup */
+  _openForm(kind, id, extra = {}) {
+    this._form = { kind, id, ...extra };
+    this._openDlg("form");
+    this._renderForm();
+  }
+  _renderForm() {
+    const d = this.shadowRoot.getElementById("cardlg"), F = this._form, k = F.kind;
+    const fld = (lbl, name, val = "", type = "text", attrs = "") => `<label class="sfld" data-f="${name}"><span>${lbl}</span><input name="${name}" type="${type}" ${type === "text" ? 'inputmode="decimal"' : ""} value="${esc(typeof val === "number" ? String(val).replace(".", ",") : val ?? "")}" ${attrs}></label>`;
+    const txt = (lbl, name, val = "", ph = "") => `<label class="sfld" data-f="${name}"><span>${lbl}</span><input name="${name}" type="text" value="${esc(val ?? "")}" placeholder="${esc(ph)}"></label>`;
+    const grp = (t, inner, cls = "") => `<div class="sgrp ${cls}">${t ? `<h4>${t}</h4>` : ""}<div class="sflds">${inner}</div></div>`;
+    const W = this._wartData(), p = F.id != null ? W.punkte.find((x) => String(x.id) === String(F.id)) : null;
+    const L = (this._ea("ladekarten_kosten")?.attributes?.karten || []), lk = F.id != null ? L.find((x) => String(x.id) === String(F.id)) : null;
+    let title = "", sub = "", body = "", save = "Speichern", danger = false;
+    if (k === "wt-add" || k === "wt-edit") {
+      const e = k === "wt-edit", hu = e ? p?.typ === "tuev" : false;
+      title = e ? "Wartungspunkt bearbeiten" : "Wartungspunkt anlegen"; sub = e ? esc(p?.name || "") : "Vorlage füllt die Felder vor – danach frei änderbar";
+      const rm = p?.reminder_tage != null ? Math.round((p.reminder_tage / 30.44) * 10) / 10 : "";
+      body = grp("", (e ? "" : `<label class="sfld" data-f="preset"><span>Vorlage</span><select name="preset" class="fpreset"><option value="">– eigene –</option>${W.presets.map((x) => `<option value="${esc(x.key)}">${esc(x.name)}</option>`).join("")}</select></label>`)
+          + txt("Name", "name", p?.name, "z. B. Inspektion") + (e ? `<label class="sfld chk"><input type="checkbox" name="aktiv" ${p?.aktiv !== false ? "checked" : ""}><span>Aktiv</span></label>` : ""))
+        + grp("Fälligkeit", (hu ? "" : fld("Kilometer-Intervall", "km_intervall", p?.km_intervall, "text", 'placeholder="z. B. 30000"')) + fld("Intervall (Monate)", "zeit_intervall_monate", p?.zeit_intervall_monate, "text", 'placeholder="z. B. 24"') + fld("Festes Datum (Monat)", "festes_datum", p?.festes_datum ? p.festes_datum.slice(0, 7) : "", "month"), "ffaell")
+        + `<div class="pnote fhint">Mindestens ein Kriterium angeben. Bei mehreren gilt, was zuerst eintritt.</div>`
+        + grp("Letzter Service", fld("Kilometerstand", "last_done_km", p?.last_done?.km) + fld("Datum", "last_done_datum", p?.last_done?.datum, "date"), "flast")
+        + grp("Erinnerung (leer = Standard)", fld("Vorwarnzeit (Monate)", "reminder_monate", rm) + fld("Vorwarnzeit (km)", "reminder_km", p?.reminder_km), "frem")
+        + grp("", fld("Kosten €", "kosten", p?.kosten), "fkost");
+    } else if (k === "wt-done") {
+      title = "Als erledigt markieren"; sub = esc(p?.name || ""); save = "Erledigt";
+      body = `<div class="pnote">Leer lassen = aktueller Kilometerstand und heute. Für einen Termin, der schon ein paar Tage her ist, Werte nachtragen.</div>` + grp("", fld("Kilometerstand", "km", "", "text", 'placeholder="aktuell"') + fld("Datum", "datum", "", "date"));
+    } else if (k === "lk-add" || k === "lk-edit") {
+      const e = k === "lk-edit", st = [...(lk?.gebuehren || [])].sort((a, b) => (a.ab_datum < b.ab_datum ? -1 : 1));
+      title = e ? "Ladekarte bearbeiten" : "Ladekarte anlegen"; sub = e ? esc(lk?.name || "") : "Monatliche Grundgebühr einer Abo-Karte";
+      body = grp("", txt("Name", "name", lk?.name, "z. B. ADAC e-Charge") + fld(e ? "Startgebühr € (früheste Stufe)" : "Monatliche Gebühr €", "monatliche_gebuehr", e ? st[0]?.gebuehr : "", "text", 'placeholder="0,00"')
+        + fld("Startdatum", "start_datum", e ? lk?.start_datum : new Date().toISOString().slice(0, 10), "date") + fld("Enddatum (optional)", "end_datum", lk?.end_datum, "date"));
+    } else if (k === "lk-stufe") {
+      title = "Preisänderung"; sub = esc(lk?.name || ""); save = "Preisstufe speichern";
+      body = `<div class="pnote">Neue Gebühr ab einem Datum, z. B. wenn ein Einführungspreis endet.</div>` + grp("", fld("Gültig ab", "ab_datum", "", "date") + fld("Monatliche Gebühr €", "gebuehr", "", "text", 'placeholder="0,00"'));
+    } else if (k === "wt-del" || k === "lk-del") {
+      title = k === "wt-del" ? "Wartungspunkt löschen" : "Ladekarte löschen"; sub = esc((k === "wt-del" ? p?.name : lk?.name) || ""); save = "Löschen"; danger = true;
+      body = `<div class="pnote">Dauerhaft löschen? Das lässt sich nicht rückgängig machen.</div>`;
+    } else if (k === "reset") {
+      title = "Kennzahlen zurücksetzen"; sub = "Neuer Startpunkt für Verbrauch und Ersparnis"; save = "Zurücksetzen"; danger = true;
+      body = grp("", fld("kWh seit Einrichtung", "home_kwh_since_setup", "", "text", 'placeholder="leer = 0"') + fld("Kosten € seit Einrichtung", "home_cost_since_setup", "", "text", 'placeholder="leer = 0"') + fld("km seit Einrichtung", "km_driven", "", "text", 'placeholder="leer = 0"'))
+        + `<div class="pnote">Fahrtenbuch und Ladehistorie bleiben unverändert. Nicht rückgängig machbar.</div>`;
+    } else if (k === "restore") {
+      const R = this._restore || {};
+      title = "Backup wiederherstellen"; sub = `${esc(R.name || "")} (${R.kb ?? "?"} KB)`; save = "Wiederherstellen"; danger = true;
+      body = `<div class="pnote">ALLE aktuellen Daten (Fahrtenbuch, Ladehistorie, Ladekarten, Wartungsplan, Kennzahlen) werden ersetzt. ev_assistant legt vorher automatisch ein Sicherheits-Backup des jetzigen Stands an.</div>`
+        + grp("", txt("Zum Bestätigen WIEDERHERSTELLEN eintippen", "confirm", "", "WIEDERHERSTELLEN"));
+    }
+    d.innerHTML = `<div class="dpan sdlg"><div class="dhd"><span class="dico">${icon(k.startsWith("wt") ? "mdi:wrench-clock" : k.startsWith("lk") ? "mdi:credit-card-multiple-outline" : "mdi:cog-outline")}</span>
+      <span class="rtx"><span class="rname">${title}</span><span class="rsub">${sub}</span></span>
+      <button class="dx" data-act="cardclose" aria-label="Schließen">${icon("mdi:close")}</button></div>
+      <form class="dbody sform" onsubmit="return false">${body}<div class="ferr"></div>
+      <div class="srow end"><button type="button" class="sbt" data-act="cardclose">Abbrechen</button><button type="button" class="sbt pri${danger ? " red" : ""}" data-act="set" data-k="save">${save}</button></div></form></div>`;
+    if (k === "wt-add") this._wtPreset("");
+  }
+  // Vorlage im Formular: Felder ein-/ausblenden (HU braucht kein km-Intervall) und leere Felder vorbelegen
+  _wtPreset(key, fill) {
+    const f = this.shadowRoot.querySelector("#cardlg .sform");
+    if (!f) return;
+    const hu = key === "tuev", insp = key === "inspektion";
+    const hide = hu ? ["km_intervall", "last_done_km", "last_done_datum", "reminder_km", "kosten"] : insp ? ["festes_datum"] : [];
+    f.querySelectorAll("[data-f]").forEach((x) => { const h = hide.includes(x.dataset.f); x.hidden = h; if (h) x.querySelector("input").value = ""; });
+    f.querySelector(".flast").hidden = hu; f.querySelector(".fkost").hidden = hu;
+    f.querySelector(".fhint").textContent = hu ? "Für die HU sind festes Datum und Intervall beide Pflicht." : "Mindestens ein Kriterium angeben. Bei mehreren gilt, was zuerst eintritt.";
+    const P = fill && this._wartData().presets.find((x) => x.key === key);
+    if (P) {
+      const set = (n, v) => { const i = f.elements[n]; if (i && !i.value.trim() && v != null) i.value = v; };
+      set("name", P.name); set("km_intervall", P.km_intervall); set("zeit_intervall_monate", P.zeit_intervall_monate);
+    }
+  }
+  _saveForm() {
+    const f = this.shadowRoot.querySelector("#cardlg .sform"), F = this._form, k = F?.kind;
+    if (!f || !k) return;
+    const v = (n) => (f.elements[n] ? String(f.elements[n].value ?? "").trim() : null);
+    const n = (x) => { x = v(x); if (x == null || x === "") return x; const r = parseFloat(x.replace(",", ".")); return isNaN(r) ? NaN : r; };
+    const err = (m) => { f.querySelector(".ferr").textContent = m; };
+    const monthEnd = (m) => { const [y, mo] = m.split("-").map(Number); return `${m}-${String(new Date(y, mo, 0).getDate()).padStart(2, "0")}`; };
+    const id = F.id != null ? Number(F.id) : null;
+    let svc = null, data = {};
+    if (k === "wt-add" || k === "wt-edit") {
+      const e = k === "wt-edit", name = v("name"), km = n("km_intervall"), zeit = n("zeit_intervall_monate"), fest = v("festes_datum") || "";
+      if (!name && !e) return err("Bitte einen Namen angeben.");
+      for (const [x, l] of [[km, "Kilometer-Intervall"], [zeit, "Intervall"], [n("kosten"), "Kosten"], [n("last_done_km"), "Kilometerstand"], [n("reminder_monate"), "Vorwarnzeit"], [n("reminder_km"), "Vorwarnzeit (km)"]]) if (Number.isNaN(x)) return err(`${l}: bitte eine Zahl eingeben.`);
+      const hasKm = km != null && km !== "", hasZ = zeit != null && zeit !== "";
+      const hu = e ? this._wartData().punkte.find((x) => x.id === id)?.typ === "tuev" : v("preset") === "tuev";
+      if (hu ? !(fest && hasZ) : !(hasKm || hasZ || fest)) return err(hu ? "Für die HU sind festes Datum und Intervall beide Pflicht." : "Mindestens ein Kriterium angeben (km, Monate oder festes Datum).");
+      if (e) {
+        svc = "edit_maintenance"; data = { wartung_id: id, aktiv: !!f.elements.aktiv?.checked };
+        if (name) data.name = name;
+        // leer = Kriterium/Wert löschen (wie im ev_assistant-Panel), fehlendes Feld = unverändert
+        if (f.elements.km_intervall) data.km_intervall = hasKm ? km : "";
+        data.zeit_intervall_monate = hasZ ? Math.round(zeit) : "";
+        data.festes_datum = fest ? monthEnd(fest) : "";
+        const ko = n("kosten"); data.kosten = ko === "" ? "" : ko;
+        const rm = n("reminder_monate"); data.reminder_monate = rm === "" ? "" : rm;
+        const rk = n("reminder_km"); data.reminder_km = rk === "" ? "" : rk;
+      } else {
+        svc = "add_maintenance"; data = { name };
+        if (v("preset")) data.preset = v("preset");
+        if (hasKm) data.km_intervall = km;
+        if (hasZ) data.zeit_intervall_monate = Math.round(zeit);
+        if (fest) data.festes_datum = monthEnd(fest);
+        for (const x of ["kosten", "reminder_monate", "reminder_km"]) { const y = n(x); if (y !== "" && y != null) data[x] = y; }
+      }
+      const lk = n("last_done_km"); if (lk !== "" && lk != null) data.last_done_km = lk;
+      if (v("last_done_datum")) data.last_done_datum = v("last_done_datum");
+    } else if (k === "wt-done") {
+      const km = n("km"); if (Number.isNaN(km)) return err("Kilometerstand: bitte eine Zahl eingeben.");
+      svc = "mark_maintenance_done"; data = { wartung_id: id };
+      if (km !== "") data.km = km;
+      if (v("datum")) data.datum = v("datum");
+    } else if (k === "lk-add" || k === "lk-edit") {
+      const e = k === "lk-edit", name = v("name"), g = n("monatliche_gebuehr"), start = v("start_datum"), end = v("end_datum");
+      if (Number.isNaN(g)) return err("Gebühr: bitte eine Zahl eingeben.");
+      if (!e && (!name || g === "" || !start)) return err("Name, Gebühr und Startdatum sind nötig.");
+      if (e) { svc = "edit_ladekarte"; data = { karte_id: id, end_datum: end || "" }; if (name) data.name = name; if (g !== "") data.monatliche_gebuehr = g; if (start) data.start_datum = start; }
+      else { svc = "add_ladekarte"; data = { name, monatliche_gebuehr: g, start_datum: start }; if (end) data.end_datum = end; }
+    } else if (k === "lk-stufe") {
+      const g = n("gebuehr"), ab = v("ab_datum");
+      if (!ab || g === "" || Number.isNaN(g)) return err("Datum und Gebühr sind nötig.");
+      svc = "add_ladekarte_preisstufe"; data = { karte_id: id, gebuehr: g, ab_datum: ab };
+    } else if (k === "wt-del") { svc = "delete_maintenance"; data = { wartung_id: id }; }
+    else if (k === "lk-del") { svc = "delete_ladekarte"; data = { karte_id: id }; }
+    else if (k === "reset") {
+      for (const x of ["home_kwh_since_setup", "home_cost_since_setup", "km_driven"]) { const y = n(x); if (Number.isNaN(y)) return err("Bitte nur Zahlen eingeben."); if (y !== "") data[x] = y; }
+      svc = "reset_lifetime_kpis";
+    } else if (k === "restore") {
+      if (v("confirm") !== "WIEDERHERSTELLEN") return err("Bitte WIEDERHERSTELLEN eintippen.");
+      svc = "restore_backup"; data = { backup_data: this._restore?.text };
+    }
+    if (!svc) return;
+    const btn = f.querySelector('[data-k="save"]'); btn.disabled = true; err("");
+    this._evaCall(svc, data).then(() => {
+      if (k === "restore") this._restore = null;
+      this.shadowRoot.getElementById("cardlg")?.close();
+      if (k === "reset" || k === "restore") this._toast(k === "reset" ? "Kennzahlen zurückgesetzt." : "Backup wiederhergestellt.");
+    }).catch(() => { btn.disabled = false; });
+  }
+  _setAct(k, ds) {
+    if (["wt-add", "wt-edit", "wt-done", "wt-del", "lk-add", "lk-edit", "lk-del", "lk-stufe", "reset"].includes(k)) return this._openForm(k, ds.id);
+    if (k === "save") return this._saveForm();
+    if (k === "lk-sdel") return this._evaCall("delete_ladekarte_preisstufe", { karte_id: Number(ds.id), ab_datum: ds.ab }).catch(() => {});
+    if (k === "img-clear") { this._imgBusy = true; this._render_img(); return this._evaCall("clear_vehicle_image").then(() => { this._imgStatus = "Bild entfernt."; }, (x) => { this._imgStatus = x?.message || String(x); }).finally(() => { this._imgBusy = false; this._render_img(); }); }
+    const id = this._evaEntryId();
+    if (k === "backup") { this._dataBusy = "backup"; this._render_data(); return this._evaCall("export_backup").then(() => this._download(`ev_assistant_backup_${id}.json`), () => {}).finally(() => { this._dataBusy = null; this._render_data(); }); }
+    if (k === "log-dl") return this._evaCall("export_event_log").then(() => this._download(`ev_assistant_event_log_${id}.txt`), () => {});
   }
 
   /* ---------- Werte ---------- */
@@ -2213,6 +2548,7 @@ class MgCarDashboard extends HTMLElement {
     }
     if (act === "page") { this._pg = el.dataset.p; try { localStorage.setItem("mg-car-page", this._pg); } catch (x) {} this._showPage(); this._update(true); requestAnimationFrame(() => { this._fit(); this._render_trips(); }); return; }
     if (act === "ana") { this._openAna(el.dataset.k); return; }
+    if (act === "set") { this._setAct(el.dataset.k, el.dataset); return; }
     if (act === "cardclose") { this.shadowRoot.getElementById("cardlg")?.close(); return; }
     if (!entity) return;
     if (act === "more") {
@@ -2729,6 +3065,48 @@ const CAR_STYLE = `
 .panb i{display:block;height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden}.panb em{display:block;height:100%;background:var(--cyan)}
 @container (max-width:1180px){.pgrid{grid-template-columns:1fr!important}.ptiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @container (max-width:720px){.pdays{grid-template-columns:repeat(4,minmax(0,1fr))}.pcols{grid-template-columns:1fr}}
+.sgrid{grid-template-columns:1.5fr 1fr!important;align-content:start}
+.wrap.fit .sgrid{grid-template-rows:none;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+.sbt{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:12px;background:var(--tile);border:1px solid var(--tileb);color:inherit;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:border-color .2s}
+.sbt:hover{border-color:rgba(255,255,255,.22)}.sbt ha-icon{--mdc-icon-size:16px}.sbt[disabled],.sbt.dis{opacity:.5;pointer-events:none}
+.sbt.pri{background:rgba(52,211,153,.16);border-color:rgba(52,211,153,.45);color:var(--green)}.sbt.pri.red{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.45);color:#f87171}
+.hd .lbl .sbt{font-size:13px;padding:6px 11px}
+.srow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}.srow.end{justify-content:flex-end;margin-top:4px}
+.slist{display:flex;flex-direction:column;gap:8px}
+.sitem{--sc:var(--dim);padding:11px 14px;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);display:flex;flex-direction:column;gap:4px;min-width:0}
+.sitem.ok{--sc:var(--green)}.sitem.soon{--sc:var(--orange)}.sitem.over{--sc:#f87171;border-color:rgba(239,68,68,.35)}.sitem.off{opacity:.62}
+.stop{display:flex;align-items:center;gap:8px;min-width:0}.stop b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdot{width:9px;height:9px;border-radius:50%;background:var(--sc);flex:none;box-shadow:0 0 10px var(--sc)}
+.stag{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.scost{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}.stop .scost + .sacts{margin-left:6px}
+.sacts{margin-left:auto;display:flex;gap:4px;flex:none}
+.sic{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:transparent;border:1px solid transparent;color:var(--muted);cursor:pointer}
+.sic:hover{background:rgba(255,255,255,.06);border-color:var(--tileb);color:inherit}.sic ha-icon{--mdc-icon-size:17px}
+.sstat{font-size:13.5px;color:var(--sc)}.sstat b{font-weight:700}
+.smeta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--muted)}
+.snote{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:10px;padding:8px 12px;border-radius:12px}.snote ha-icon{--mdc-icon-size:17px}
+.snote.warn{color:var(--orange);background:rgba(249,115,22,.1);border:1px solid rgba(249,115,22,.3)}
+.skpi{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}.skpi b{font-size:24px;font-variant-numeric:tabular-nums}.skpi b small{font-size:13px;color:var(--muted);margin-left:3px}.skpi span{font-size:13px;color:var(--muted)}
+.schips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.schip{display:inline-flex;align-items:center;gap:4px;padding:3px 6px 3px 10px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--tileb);font-size:12px;color:var(--muted)}.schip b{color:var(--text,inherit)}
+.schip.add{padding:3px 10px;cursor:pointer;font:inherit;font-size:12px;color:var(--muted);border-style:dashed}.schip.add:hover{color:inherit}.schip ha-icon{--mdc-icon-size:14px}
+.sx{display:grid;place-items:center;width:20px;height:20px;border-radius:6px;border:0;background:transparent;color:var(--muted);cursor:pointer}.sx:hover{background:rgba(255,255,255,.08);color:inherit}
+.simgbox{display:grid;place-items:center;min-height:110px;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);padding:10px;margin-bottom:10px}
+.simgbox img{max-width:100%;max-height:180px;object-fit:contain}
+.sblk + .sblk{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.sblk h4{margin:0 0 4px;font-size:14px}
+#slog .srow{margin:8px 0 10px}#slog select,#slog input,.sfld input,.sfld select{font:inherit;font-size:14px;color:inherit;background:var(--tile);border:1px solid var(--tileb);border-radius:11px;padding:7px 10px;outline:none;color-scheme:dark;min-width:0}
+#slog input{flex:1}#slog select:focus,#slog input:focus,.sfld input:focus,.sfld select:focus{border-color:rgba(255,255,255,.3)}
+.sloglist{max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+.sline{display:grid;grid-template-columns:auto auto 1fr;gap:4px 10px;padding:5px 2px;border-bottom:1px solid var(--line);font-size:12.5px;align-items:baseline}
+.sline span{color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}.sline em{font-style:normal;color:var(--cyan);font-weight:600;white-space:nowrap}.sline p{margin:0;min-width:0;overflow-wrap:anywhere}
+.sdlg{max-width:620px;margin:0 auto;width:100%}.sform{gap:12px}
+.sgrp h4{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.sflds{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.sfld{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}.sfld.chk{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:inherit}
+.sfld.chk input{width:18px;height:18px;accent-color:var(--green)}
+.ferr{color:#f87171;font-size:13px;min-height:1px}.ferr:empty{display:none}
+@container (max-width:1180px){.sgrid{grid-template-columns:1fr!important}}
+@container (max-width:720px){.sline{grid-template-columns:auto 1fr}.sline p{grid-column:1 / -1}}
 `;
 
 if (!customElements.get("mg-car-dashboard")) customElements.define("mg-car-dashboard", MgCarDashboard);
