@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=35  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=36  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.10";
+const VERSION = "3.5.11";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -84,7 +84,7 @@ const CAR_DEFAULTS = {
       session_price: "eva:session_price",
       duration: "eva:duration",
       currents: "eva:currents",       // Ladestrom je Phase: evcc „chargeCurrents“ über ev_assistant, sonst „Ladestrom P1–P3“ der evcc-Integration; oder Liste eigener Sensoren
-      remaining: "",                  // Restladezeit (Sensor)
+      remaining: "",                  // Restladezeit (Sensor; leer = „Laderestzeit“ der evcc-Integration)
       finish: "",                     // voraussichtliches Ladeende (Sensor mit Zeitstempel)
       limit_soc: "eva:limit_soc",     // Ladeziel: automatisch das Select der evcc-Integration (auswählbar), sonst evcc-Live-Wert (nur Anzeige)
       min_soc: "eva:min_soc",         // Markierung „bis hier immer laden“
@@ -582,7 +582,7 @@ class MgCarDashboard extends HTMLElement {
   _render_mgmt_eva(el) {
     const E = this._eva(), L = this._live(), mc = this._st(E.evcc_mode_control), ma = mc?.attributes || {};
     const ms = this._evaModeState(), entry = this._evaEntryId();
-    const modeSel = this._evccEnt("mode"), acSel = this._evccEnt("alwayscharge");
+    const acSel = this._evccEnt("alwayscharge");
     const acState = this._st(acSel)?.state;
 
     // --- evcc: Ist-Zustand ---
@@ -609,9 +609,8 @@ class MgCarDashboard extends HTMLElement {
     const sel = o || (ms.cur === "auto" && !paused ? "auto" : evSel);
     const smartSel = ["pv", "minpv", "once"].includes(sel), selOpt = EVA_SMART_OPTS.find((x) => (sel === "pv" ? x.ac === "off" : sel === "minpv" ? x.ac === "on" : x.ac === "once"));
     const tile = (m, on, act, inner, extra = "") => `<button class="mmode ${on ? "sel" : ""}" style="--cc:${m.color}" data-act="${act}" ${extra} title="${esc(m.title || "")}"><span class="mmh">${inner}</span></button>`;
-    const modes = `<div class="mmodes">
+    const modes = `<div class="mmodes m3">
       ${tile(EVA_AUTO, sel === "auto", "evamode2", `${icon(EVA_AUTO.icon)}<b>Auto</b>`, `data-v="auto"`)}
-      ${modeSel ? tile({ color: "#8b91a1", title: "nicht laden" }, sel === "off", "evamode2", `${icon("mdi:power-off")}<b>Aus</b>`, `data-v="off"`) : ""}
       ${tile({ ...EVA_SMART, title: smartSel ? `Smart · ${selOpt.long}` : "Smart: aus (nur PV), immer oder 1x" }, smartSel, "evasmartmenu", `${smartSel ? ico(selOpt) : icon("mdi:solar-power")}<b>Smart</b>${icon("mdi:chevron-down", "mchv")}`)}
       ${tile(EVA_NOW, sel === "now", "evamode2", `${icon(EVA_NOW.icon)}<b>Schnell</b>`, `data-v="now"`)}</div>`;
 
@@ -825,12 +824,21 @@ class MgCarDashboard extends HTMLElement {
     const stCls = charging ? "on" : plugged ? "ready" : "";
 
     // links: große Zahl + Zeitangabe
-    let kicker = "", when = "";
+    let kicker = "", when = "", kickEnd = "";
     if (charging) {
-      kicker = `Lädt${durMin != null ? ` seit ${durTxt}` : ""}`;
-      const fin = this._st(ev.finish), finD = fin && !OFFLINE_HD.includes(fin.state) ? new Date(fin.state) : null, rem = this._fmt(ev.remaining);
+      // Ladeende: eigener Sensor (finish), sonst jetzt + Restladezeit (eigener Sensor oder „Laderestzeit“ der evcc-Integration)
+      const fin = this._st(ev.finish);
+      let finD = fin && !OFFLINE_HD.includes(fin.state) ? new Date(fin.state) : null;
+      if (!finD || isNaN(finD)) {
+        const rs = this._st(ev.remaining || this._evccEnt("chargeremainingduration", true)), rv = parseFloat(rs?.state);
+        const u = String(rs?.attributes?.unit_of_measurement || "s").toLowerCase();
+        const sec = isNaN(rv) || rv <= 0 ? null : u === "h" ? rv * 3600 : u === "min" ? rv * 60 : u === "d" ? rv * 86400 : rv;
+        finD = sec != null ? new Date(Date.now() + sec * 1000) : null;
+      }
+      const finTxt = finD && !isNaN(finD) ? `bis ${new Date(finD).toDateString() !== new Date().toDateString() ? `${WD[finD.getDay()]} ` : ""}${pad(finD.getHours())}:${pad(finD.getMinutes())} Uhr` : "";
+      kicker = `Lädt${durMin != null ? ` seit ${durTxt}` : ""}`; kickEnd = finTxt;
       const amps = this._phaseCurrents();
-      when = `${icon("mdi:flash")}<b>${p.v} ${p.u}</b>${avgP != null ? ` <span>(Ø ${de(avgP, 1)} kW)</span>` : ""}${amps ? `<span class="lamps">${amps}</span>` : ""}${finD && !isNaN(finD) ? ` · fertig ${pad(finD.getHours())}:${pad(finD.getMinutes())} Uhr` : rem ? ` · noch ${rem.v} ${rem.u}` : ""}`;
+      when = `${icon("mdi:flash")}<b>${p.v} ${p.u}</b>${avgP != null ? ` <span>(Ø ${de(avgP, 1)} kW)</span>` : ""}${amps ? `<span class="lamps">${amps}</span>` : ""}`;
     } else if (L) {
       const d = new Date(L.end);
       kicker = `Letzte Ladung · ${this._ago(d)}`;
@@ -874,7 +882,7 @@ class MgCarDashboard extends HTMLElement {
       <div class="lclick" data-act="charges" title="Alle Ladungen anzeigen">
       <div class="lhero ${charging ? "chg" : ""}">
         <div class="lhl">
-          <span class="lkick">${esc(kicker)}</span>
+          <span class="lkick">${esc(kicker)}${kickEnd ? `<span class="lend"><i> · </i>${esc(kickEnd)}</span>` : ""}</span>
           <div class="lbig"><b>${kwh == null ? "–" : de(kwh, 1)}</b><small>kWh</small>${!charging && avgP != null ? `<span class="lavg">Ø ${de(avgP, 1)} kW</span>` : ""}</div>
           ${when ? `<span class="lwhen">${when}</span>` : ""}
         </div>
@@ -2841,7 +2849,7 @@ const CAR_STYLE = `
 .mbottom.m3 .mbtn span{overflow:hidden;text-overflow:ellipsis}
 .mpb{display:flex;gap:6px;align-items:center}
 .merr{margin:0 0 10px;padding:8px 12px;border-radius:12px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3)}
-@container (max-width:420px){.mstats,.mbottom.m3,#mgmt .mmodes{display:grid;grid-template-columns:1fr 1fr}.mbottom.m3 .mbtn:first-child,.mst:last-child{grid-column:1 / -1}}
+@container (max-width:420px){.mstats,.mbottom.m3,#mgmt .mmodes:not(.m3){display:grid;grid-template-columns:1fr 1fr}.mbottom.m3 .mbtn:first-child,.mst:last-child{grid-column:1 / -1}}
 .limm{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
 /* Laden */
 .lclick{cursor:pointer;border-radius:22px}
@@ -2887,6 +2895,9 @@ const CAR_STYLE = `
 .lhero.chg{background:radial-gradient(120% 120% at 0% 0%,rgba(52,211,153,.16),transparent 60%),var(--tile);border-color:rgba(52,211,153,.4)}
 .lhl{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .lkick{font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lkick .lend{color:var(--text)}
+.lkick .lend i{font-style:normal;color:var(--muted)}
+@container (max-width:460px){.lkick{white-space:normal}.lkick .lend{display:block}.lkick .lend i{display:none}}
 .lbig{display:flex;align-items:baseline;gap:6px}
 .lbig b{font-size:46px;font-weight:800;line-height:1.05;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .lhero.chg .lbig b{color:var(--green)}
