@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=34  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=35  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.7.2";
+const VERSION = "3.5.10";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -818,6 +818,7 @@ class MgCarDashboard extends HTMLElement {
     const durMin = !charging && L?.durMin != null ? L.durMin : dur == null ? (!charging && L?.sessDur != null ? L.sessDur : null) : durU === "h" ? dur * 60 : durU === "s" ? dur / 60 : dur;
     const durTxt = durMin == null ? "–" : durMin >= 60 ? `${Math.floor(durMin / 60)}:${pad(Math.round(durMin % 60))} h` : `${Math.round(durMin)} min`;
     const cur = this._st(ev.session_price)?.attributes?.unit_of_measurement || "€";
+    const avgP = kwh != null && durMin > 1 ? kwh / (durMin / 60) : null;   // Ø Ladeleistung der (letzten) Sitzung
 
     // Kopf: Status
     const stTxt = charging ? "Lädt" : plugged ? "Bereit" : "Abgesteckt";
@@ -829,7 +830,7 @@ class MgCarDashboard extends HTMLElement {
       kicker = `Lädt${durMin != null ? ` seit ${durTxt}` : ""}`;
       const fin = this._st(ev.finish), finD = fin && !OFFLINE_HD.includes(fin.state) ? new Date(fin.state) : null, rem = this._fmt(ev.remaining);
       const amps = this._phaseCurrents();
-      when = `${icon("mdi:flash")}<b>${p.v} ${p.u}</b>${amps ? `<span class="lamps">${amps}</span>` : ""}${finD && !isNaN(finD) ? ` · fertig ${pad(finD.getHours())}:${pad(finD.getMinutes())} Uhr` : rem ? ` · noch ${rem.v} ${rem.u}` : ""}`;
+      when = `${icon("mdi:flash")}<b>${p.v} ${p.u}</b>${avgP != null ? ` <span>(Ø ${de(avgP, 1)} kW)</span>` : ""}${amps ? `<span class="lamps">${amps}</span>` : ""}${finD && !isNaN(finD) ? ` · fertig ${pad(finD.getHours())}:${pad(finD.getMinutes())} Uhr` : rem ? ` · noch ${rem.v} ${rem.u}` : ""}`;
     } else if (L) {
       const d = new Date(L.end);
       kicker = `Letzte Ladung · ${this._ago(d)}`;
@@ -850,18 +851,12 @@ class MgCarDashboard extends HTMLElement {
       <div class="lsplitl"><span class="pv">${icon("mdi:solar-power-variant")}PV <b>${de(pvK, 1)} kWh</b></span><span class="gr">${icon("mdi:transmission-tower")}Netz <b>${de(grK, 1)} kWh</b></span></div>` : "";
 
     // Kennzahlen
-    const per = cost != null && kwh > 0.05 ? cost / kwh : null, avgP = kwh != null && durMin > 1 ? kwh / (durMin / 60) : null;
-    // SoC: letzte Ladung Start → Ende (evcc-Ladelogbuch), beim Laden aktueller SoC → Ladeziel
-    const socNow = num(c.soc), lim = parseFloat(this._st(c.limit)?.state);
-    const socTxt = charging ? (socNow == null ? "–" : `${Math.round(socNow)}${!isNaN(lim) && lim > socNow ? ` → ${Math.round(lim)}` : ""} %`)
-      : L?.s0 != null && L?.s1 != null ? `${Math.round(L.s0)} → ${Math.round(L.s1)} %` : "–";
+    const per = cost != null && kwh > 0.05 ? cost / kwh : null;
     const fact = (lbl, v) => `<div class="lfact"><span>${lbl}</span><b>${v}</b></div>`;
     const facts = [
       fact("Dauer", durTxt, ev.duration),
       fact("Kosten", cost == null ? "–" : `${de(cost, 2)} ${esc(cur)}`, ev.session_price),
       fact("Preis", per == null ? "–" : `${de(per * 100, 1)} ct/kWh`),
-      fact("Ø Leistung", avgP == null ? "–" : `${de(avgP, 1)} kW`),
-      fact("SoC", socTxt),
     ].join("");
 
     // Plan, Modus, Hinweise als schmale Zeilen
@@ -880,7 +875,7 @@ class MgCarDashboard extends HTMLElement {
       <div class="lhero ${charging ? "chg" : ""}">
         <div class="lhl">
           <span class="lkick">${esc(kicker)}</span>
-          <div class="lbig"><b>${kwh == null ? "–" : de(kwh, 1)}</b><small>kWh</small></div>
+          <div class="lbig"><b>${kwh == null ? "–" : de(kwh, 1)}</b><small>kWh</small>${!charging && avgP != null ? `<span class="lavg">Ø ${de(avgP, 1)} kW</span>` : ""}</div>
           ${when ? `<span class="lwhen">${when}</span>` : ""}
         </div>
         <div class="lringw">${ring}</div>
@@ -2896,6 +2891,7 @@ const CAR_STYLE = `
 .lbig b{font-size:46px;font-weight:800;line-height:1.05;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .lhero.chg .lbig b{color:var(--green)}
 .lbig small{font-size:16px;color:var(--muted);font-weight:600}
+.lbig .lavg{margin-left:8px;font-size:14px;color:var(--muted);white-space:nowrap}
 .lwhen{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--muted);flex-wrap:wrap}
 .lwhen ha-icon{--mdc-icon-size:16px;color:var(--dim)}
 .lwhen b{color:var(--text)}
@@ -2920,7 +2916,7 @@ const CAR_STYLE = `
 .lsplitl ha-icon{--mdc-icon-size:15px}
 .lsplitl .pv ha-icon{color:var(--e-solar)}.lsplitl .gr ha-icon{color:var(--e-grid-in)}
 .lsplitl b{color:var(--text);font-variant-numeric:tabular-nums}
-.lfacts{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:12px}.lfacts .lfact{grid-column:span 2}.lfacts .lfact:nth-child(n+4){grid-column:span 3}
+.lfacts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
 .lfact{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:14px;background:var(--tile);border:1px solid var(--tileb);min-width:0}
 .lfact span{font-size:11.5px;color:var(--muted);font-weight:600;white-space:nowrap}
 .lfact b{font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2931,7 +2927,7 @@ const CAR_STYLE = `
 .lrow b{margin-left:auto;color:var(--text);font-weight:600;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lrow.warn ha-icon,.lrow.warn b{color:var(--orange)}
 .wrap.compact .lbig b{font-size:36px}.wrap.compact .lringw{width:80px;height:80px}.wrap.compact .lhero{padding:12px 14px}
-@container (max-width:720px){.lfacts{grid-template-columns:repeat(2,minmax(0,1fr))}.lfacts .lfact,.lfacts .lfact:nth-child(n+4){grid-column:auto}.lfacts .lfact:last-child{grid-column:1 / -1}}
+
 .carpage .cstats{grid-template-columns:repeat(2,minmax(0,1fr))}
 #trips{display:flex;flex-direction:column}
 .tlist{display:flex;flex-direction:column;gap:6px}
