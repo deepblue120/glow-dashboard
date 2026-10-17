@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=40  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=41  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.15";
+const VERSION = "3.5.16";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -1741,6 +1741,16 @@ class MgCarDashboard extends HTMLElement {
     if ((d != null && d <= 28) || (k != null && k <= 500)) return "orange";
     return "yellow";
   }
+  // warum ev_assistant (noch) keine Fälligkeit liefert – mit Hinweis, was fehlt
+  _wartWhyNot(p) {
+    const ld = p.last_done || {}, hasStart = ld.km != null || !!ld.datum;
+    const kmI = p.km_intervall_wirksam ?? p.km_intervall, zI = p.zeit_intervall_wirksam ?? p.zeit_intervall_monate;
+    let t = "noch nicht berechenbar", h = "";
+    if (!hasStart && !p.festes_datum) { t = "Startpunkt fehlt"; h = "Bearbeiten → Letzter Service: Datum der Erstzulassung und 0 km eintragen – ab da zählt das Intervall."; }
+    else if (kmI && ld.km != null && !(zI && ld.datum)) { t = "km-Stand unbekannt"; h = zI ? "Für die Zeit fehlt das Datum des letzten Service. Für die km meldet ev_assistant keinen aktuellen km-Stand." : "ev_assistant meldet keinen aktuellen km-Stand."; }
+    else if (zI && !ld.datum && !kmI) { t = "Datum fehlt"; h = "Bearbeiten → Letzter Service: Datum eintragen."; }
+    return `<b>${t}</b>${h ? `<button class="whint" data-act="set" data-k="wt-edit" data-id="${p.id}">${h}</button>` : ""}`;
+  }
   _render_wart() {
     const el = this.shadowRoot.getElementById("swart"), { punkte } = this._wartData();
     if (!this._setSig(el, this._evaEntryId() + JSON.stringify(punkte) + new Date().toDateString())) return;
@@ -1772,7 +1782,7 @@ class MgCarDashboard extends HTMLElement {
       const nach = first && (p.km_intervall || p.zeit_intervall_monate) ? ` · danach ${[p.km_intervall && `${de(p.km_intervall, 0)} km`, p.zeit_intervall_monate && `${p.zeit_intervall_monate} Monate`].filter(Boolean).join(" / ")}` : "";
       return `<div class="witem ${lv}${over ? " over" : ""}"><div class="stop"><b>${esc(p.name)}</b>${first ? `<span class="stag">1. Termin</span>` : ""}${p.aktiv === false ? `<span class="stag">pausiert</span>` : ""}
           <span class="sacts"><button class="sic" data-act="set" data-k="wt-done" data-id="${p.id}" title="Als erledigt markieren">${icon("mdi:check")}</button><button class="sic" data-act="set" data-k="wt-edit" data-id="${p.id}" title="Bearbeiten">${icon("mdi:pencil")}</button><button class="sic" data-act="set" data-k="wt-del" data-id="${p.id}" title="Löschen">${icon("mdi:delete-outline")}</button></span></div>
-        <div class="wnext"><span class="wlbl">${over ? "Überfällig" : "Nächster Termin"}</span><b>${parts.length ? parts.join(" · ") : "noch nicht berechenbar"}</b>${ziel ? `<small>${ziel}</small>` : ""}</div>
+        <div class="wnext"><span class="wlbl">${over ? "Überfällig" : "Nächster Termin"}</span>${parts.length ? `<b>${parts.join(" · ")}</b>${ziel ? `<small>${ziel}</small>` : ""}` : this._wartWhyNot(p)}</div>
         ${prog != null ? `<div class="wbar"><i style="width:${Math.max(2, Math.min(100, prog * 100)).toFixed(1)}%"></i></div>` : ""}
         <div class="smeta">${done}<span>${krit || "kein Kriterium"}${nach}</span>${p.kosten != null ? `<span>${de(p.kosten, 2)} €</span>` : ""}</div></div>`;
     }).join("");
@@ -1988,8 +1998,9 @@ class MgCarDashboard extends HTMLElement {
         + `<div class="pnote fhint">Mindestens ein Kriterium angeben. Bei mehreren gilt, was zuerst eintritt.</div>`
         + grp("Erster Termin abweichend (optional)", (hu ? "" : fld("Erstes km-Intervall", "erst_km_intervall", p?.erst_km_intervall, "text", 'placeholder="z. B. 12500"')) + fld("Erstes Intervall (Monate)", "erst_zeit_intervall_monate", p?.erst_zeit_intervall_monate, "text", 'placeholder="z. B. 12"')
           + (e ? fld("Schon erledigt (Anzahl)", "erledigt_anzahl", p?.erledigt_anzahl ?? "", "text", 'placeholder="0"') : ""), "ferst")
-        + `<div class="pnote">Gilt nur bis zum ersten „erledigt“, z. B. erste Inspektion nach 12.500 km / 12 Monaten, danach das normale Intervall (ev_assistant ab 0.99.57).</div>`
+        + `<div class="pnote">Nur zusätzlich zum normalen Intervall unter „Fälligkeit“: gilt bis zum ersten „erledigt“, danach das normale. Beispiel: Fälligkeit 25.000 km / 24 Monate, erster Termin 12.500 km / 12 Monate (ev_assistant ab 0.99.57).</div>`
         + grp("Letzter Service", fld("Kilometerstand", "last_done_km", p?.last_done?.km) + fld("Datum", "last_done_datum", p?.last_done?.datum, "date"), "flast")
+        + `<div class="pnote">Noch nie gemacht? Datum der Erstzulassung und 0 km eintragen – ab da zählt das (erste) Intervall.</div>`
         + grp("Erinnerung (leer = Standard)", fld("Vorwarnzeit (Monate)", "reminder_monate", rm) + fld("Vorwarnzeit (km)", "reminder_km", p?.reminder_km), "frem")
         + grp("", fld("Kosten €", "kosten", p?.kosten), "fkost");
     } else if (k === "wt-done") {
@@ -2074,7 +2085,10 @@ class MgCarDashboard extends HTMLElement {
       for (const [x, l] of [[n("erst_km_intervall"), "Erstes km-Intervall"], [n("erst_zeit_intervall_monate"), "Erstes Intervall"], [n("erledigt_anzahl"), "Anzahl erledigt"], [km, "Kilometer-Intervall"], [zeit, "Intervall"], [n("kosten"), "Kosten"], [n("last_done_km"), "Kilometerstand"], [n("reminder_monate"), "Vorwarnzeit"], [n("reminder_km"), "Vorwarnzeit (km)"]]) if (Number.isNaN(x)) return err(`${l}: bitte eine Zahl eingeben.`);
       const hasKm = km != null && km !== "", hasZ = zeit != null && zeit !== "";
       const hu = e ? this._wartData().punkte.find((x) => x.id === id)?.typ === "tuev" : v("preset") === "tuev";
+      const hasErst = !!(n("erst_km_intervall") || n("erst_zeit_intervall_monate"));
+      if (!hu && hasErst && !(hasKm || hasZ || fest)) return err("Das erste Intervall gilt nur bis zum ersten Termin. Trag unter „Fälligkeit“ auch das normale Intervall ein (z. B. 25.000 km / 24 Monate) – das gilt danach.");
       if (hu ? !(fest && hasZ) : !(hasKm || hasZ || fest)) return err(hu ? "Für die HU sind festes Datum und Intervall beide Pflicht." : "Mindestens ein Kriterium angeben (km, Monate oder festes Datum).");
+      if (hasErst && !v("last_done_datum") && (n("last_done_km") === "" || n("last_done_km") == null) && !(e && (this._wartData().punkte.find((x) => x.id === id)?.last_done))) return err("Ab wann zählt das erste Intervall? Trag unter „Letzter Service“ die Erstzulassung ein (Datum und 0 km).");
       if (e) {
         svc = "edit_maintenance"; data = { wartung_id: id, aktiv: !!f.elements.aktiv?.checked };
         if (name) data.name = name;
@@ -3341,7 +3355,7 @@ const CAR_STYLE = `
 .witem.red.over{animation:wpulse 2.4s ease-in-out infinite}
 @keyframes wpulse{0%,100%{box-shadow:0 0 0 rgba(248,113,113,0)}50%{box-shadow:0 0 18px rgba(248,113,113,.35)}}
 .wnext{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px}.wnext .wlbl{width:100%;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
-.wnext b{font-size:17px;color:var(--wc);font-variant-numeric:tabular-nums}.wnext small{font-size:12.5px;color:var(--muted)}
+.wnext b{font-size:17px;color:var(--wc);font-variant-numeric:tabular-nums}.whint{width:100%;text-align:left;padding:0;border:0;background:none;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}.wnext small{font-size:12.5px;color:var(--muted)}
 .wbar{height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden}.wbar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,color-mix(in srgb,var(--wc) 45%,transparent),var(--wc));box-shadow:0 0 10px var(--wc)}
 .wdone{display:inline-flex;align-items:center;gap:5px;padding:2px 9px 2px 6px;border-radius:9px;color:var(--green);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.35);box-shadow:0 0 12px rgba(52,211,153,.18);position:relative;overflow:hidden}
 .wdone ha-icon{--mdc-icon-size:15px}
