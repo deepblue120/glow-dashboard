@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=39`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=40`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -96,7 +96,7 @@ laufen in einem Popup über die Dienste von ev_assistant (für das gerade gewäh
 
 | Bereich | Inhalt / Aktionen |
 |---|---|
-| Wartung | Wartungspunkte mit Status (OK / bald fällig / überfällig), Fälligkeit, Kriterien und letztem Service; anlegen (mit Vorlagen HU und Inspektion), bearbeiten, als erledigt markieren, löschen |
+| Wartung | Wartungspunkte mit Countdown bis zum nächsten Termin (Zeit und km) und Fortschrittsbalken – gelb, ab 500 km / 4 Wochen orange, ab 100 km / 1 Woche rot; erledigte Termine grün; abweichendes Erstintervall (ev_assistant ab 0.99.57); anlegen (mit Vorlagen HU und Inspektion), bearbeiten, als erledigt markieren, löschen |
 | Ladekarten | aufgelaufene Grundgebühren gesamt, je Karte aktuelle Gebühr, Zeitraum und Preisstufen; anlegen, bearbeiten, Preisänderung hinzufügen/entfernen, löschen |
 | Fahrzeugbild | Bild hochladen (JPEG/PNG/WebP bis 10 MB) oder entfernen |
 | Daten | Backup erstellen (Download), Backup wiederherstellen (mit Bestätigung „WIEDERHERSTELLEN“), Kennzahlen seit Einrichtung zurücksetzen |
@@ -184,6 +184,7 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
+| 3.5.15 | Wartung: Countdown bis zum nächsten Termin, Farben gelb/orange/rot, erledigte grün, abweichendes Erstintervall |
 | 3.5.14 | Fahrten und Fremdladungen bearbeiten/löschen, erkannte Ladungen/Fahrten auf der Hauptkachel bestätigen |
 | 3.5.13 | iOS: Seite springt nicht mehr nach oben (Abschnitte nur bei Änderung neu zeichnen, #20) |
 | 3.5.12 | Lademanagement: Auto + Modus-Auswahl, „Laden ab PV-Anteil“ einstellbar (ev_assistant ab 0.99.57); evcc-Zeile und Überschrift entfernt |

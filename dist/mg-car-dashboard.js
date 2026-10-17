@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=39  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=40  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.14";
+const VERSION = "3.5.15";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -1732,32 +1732,56 @@ class MgCarDashboard extends HTMLElement {
     const a = this._ea("wartung_faellig")?.attributes || {};
     return { punkte: Array.isArray(a.punkte) ? a.punkte : [], presets: Array.isArray(a.presets) ? a.presets : [] };
   }
+  // Dringlichkeit des nächsten Termins: gelb, ab 500 km / 4 Wochen orange, ab 100 km / 1 Woche (und überfällig) rot
+  _wartLevel(p) {
+    if (p.aktiv === false) return "off";
+    const d = p.rest_tage, k = p.rest_km;
+    if (d == null && k == null) return "unk";
+    if ((d != null && d <= 7) || (k != null && k <= 100)) return "red";
+    if ((d != null && d <= 28) || (k != null && k <= 500)) return "orange";
+    return "yellow";
+  }
   _render_wart() {
     const el = this.shadowRoot.getElementById("swart"), { punkte } = this._wartData();
-    if (!this._setSig(el, this._evaEntryId() + JSON.stringify(punkte))) return;
-    const ST = { ok: ["OK", "ok"], bald_faellig: ["Bald fällig", "soon"], ueberfaellig: ["Überfällig", "over"], unbekannt: ["Unbekannt", ""] };
+    if (!this._setSig(el, this._evaEntryId() + JSON.stringify(punkte) + new Date().toDateString())) return;
     const add = `<button class="sbt" data-act="set" data-k="wt-add">${icon("mdi:plus")}Anlegen</button>`;
     if (!punkte.length) { el.innerHTML = this._hd("Wartung", add) + `<div class="empty">Noch kein Wartungspunkt angelegt – z. B. HU oder Inspektion, fällig nach Kilometerstand, Zeit oder beidem (je nachdem, was zuerst kommt).</div>`; return; }
+    const tage = (n) => { n = Math.abs(n); return n >= 60 ? `${Math.round(n / 30.44)} Monaten` : n >= 14 ? `${Math.round(n / 7)} Wochen` : `${n} Tag${n === 1 ? "" : "en"}`; };
     const items = punkte.map((p) => {
-      const [lbl, cls] = ST[p.status] || [esc(p.status), ""];
-      let when = "";
-      if (p.status !== "unbekannt") {
-        if (p.rest_tage != null) when = `${p.rest_tage >= 0 ? "in" : "vor"} ${Math.abs(p.rest_tage)} Tag${Math.abs(p.rest_tage) === 1 ? "" : "en"}${p.faellig_datum ? ` (${p.naechste_quelle === "fest" ? this._fmonth(p.faellig_datum) : this._fdate(p.faellig_datum)})` : ""}`;
-        else if (p.rest_km != null) when = `${p.rest_km >= 0 ? "in" : "vor"} ${de(Math.abs(p.rest_km), 0)} km`;
-        if (p.rest_tage != null && p.rest_km != null) {
-          const ziel = p.last_done?.km != null && p.km_intervall ? p.last_done.km + p.km_intervall : null;
-          when += ` · ${p.rest_km >= 0 ? `noch ${de(p.rest_km, 0)} km` : `${de(-p.rest_km, 0)} km über`}${ziel != null ? ` ${p.rest_km >= 0 ? "bis" : ""} ${de(ziel, 0)} km`.replace("  ", " ") : ""}`;
-        }
+      const lv = this._wartLevel(p), over = (p.rest_tage != null && p.rest_tage < 0) || (p.rest_km != null && p.rest_km < 0) || p.status === "ueberfaellig";
+      const kmI = p.km_intervall_wirksam ?? p.km_intervall, zI = p.zeit_intervall_wirksam ?? p.zeit_intervall_monate;
+      // wie lange noch bis zum nächsten Termin (Zeit und km)
+      const parts = [];
+      if (p.rest_tage != null) parts.push(p.rest_tage >= 0 ? `in ${tage(p.rest_tage)}` : `seit ${tage(p.rest_tage)} überfällig`);
+      if (p.rest_km != null) parts.push(p.rest_km >= 0 ? `noch ${de(p.rest_km, 0)} km` : `${de(-p.rest_km, 0)} km drüber`);
+      const ziel = [p.faellig_datum && (p.naechste_quelle === "fest" ? this._fmonth(p.faellig_datum) : this._fdate(p.faellig_datum)),
+        p.last_done?.km != null && kmI ? `bei ${de(p.last_done.km + kmI, 0)} km` : null].filter(Boolean).join(" · ");
+      // Fortschritt seit dem letzten Termin (km oder Zeit, was weiter ist)
+      let prog = null;
+      if (kmI && p.rest_km != null) prog = (kmI - p.rest_km) / kmI;
+      if (zI && p.last_done?.datum) {
+        const a = new Date(p.last_done.datum), b = new Date(a); b.setMonth(b.getMonth() + Number(zI));
+        const f = (Date.now() - a.getTime()) / Math.max(1, b.getTime() - a.getTime());
+        prog = prog == null ? f : Math.max(prog, f);
       }
-      const krit = [p.km_intervall && `alle ${de(p.km_intervall, 0)} km`, p.zeit_intervall_monate && `alle ${p.zeit_intervall_monate} Monate`, p.festes_datum && `fest ${this._fmonth(p.festes_datum)}`].filter(Boolean).join(" · ") || "kein Kriterium";
-      const last = [p.last_done?.km != null && `${de(p.last_done.km, 0)} km`, p.last_done?.datum && this._fdate(p.last_done.datum)].filter(Boolean).join(" · ") || "–";
-      return `<div class="sitem ${cls}${p.aktiv === false ? " off" : ""}"><div class="stop"><i class="sdot"></i><b>${esc(p.name)}</b>${p.aktiv === false ? `<span class="stag">pausiert</span>` : ""}
+      const n = p.erledigt_anzahl != null ? p.erledigt_anzahl : p.last_done && (p.last_done.km != null || p.last_done.datum) ? 1 : 0;
+      const first = p.intervall_phase === "erst";
+      const done = n > 0 || p.last_done?.datum || p.last_done?.km != null
+        ? `<span class="wdone">${icon("mdi:check-circle")}${n > 1 ? `${n}× erledigt · ` : ""}zuletzt ${[p.last_done?.km != null && `${de(p.last_done.km, 0)} km`, p.last_done?.datum && this._fdate(p.last_done.datum)].filter(Boolean).join(" · ") || "erledigt"}</span>` : "";
+      const krit = [kmI && `alle ${de(kmI, 0)} km`, zI && `alle ${zI} Monate`, p.festes_datum && `fest ${this._fmonth(p.festes_datum)}`].filter(Boolean).join(" · ");
+      const nach = first && (p.km_intervall || p.zeit_intervall_monate) ? ` · danach ${[p.km_intervall && `${de(p.km_intervall, 0)} km`, p.zeit_intervall_monate && `${p.zeit_intervall_monate} Monate`].filter(Boolean).join(" / ")}` : "";
+      return `<div class="witem ${lv}${over ? " over" : ""}"><div class="stop"><b>${esc(p.name)}</b>${first ? `<span class="stag">1. Termin</span>` : ""}${p.aktiv === false ? `<span class="stag">pausiert</span>` : ""}
           <span class="sacts"><button class="sic" data-act="set" data-k="wt-done" data-id="${p.id}" title="Als erledigt markieren">${icon("mdi:check")}</button><button class="sic" data-act="set" data-k="wt-edit" data-id="${p.id}" title="Bearbeiten">${icon("mdi:pencil")}</button><button class="sic" data-act="set" data-k="wt-del" data-id="${p.id}" title="Löschen">${icon("mdi:delete-outline")}</button></span></div>
-        <div class="sstat"><b>${lbl}</b>${when ? ` · ${when}` : ""}</div>
-        <div class="smeta"><span>${krit}</span><span>Letzter Service: ${last}</span>${p.kosten != null ? `<span>${de(p.kosten, 2)} €</span>` : ""}</div></div>`;
+        <div class="wnext"><span class="wlbl">${over ? "Überfällig" : "Nächster Termin"}</span><b>${parts.length ? parts.join(" · ") : "noch nicht berechenbar"}</b>${ziel ? `<small>${ziel}</small>` : ""}</div>
+        ${prog != null ? `<div class="wbar"><i style="width:${Math.max(2, Math.min(100, prog * 100)).toFixed(1)}%"></i></div>` : ""}
+        <div class="smeta">${done}<span>${krit || "kein Kriterium"}${nach}</span>${p.kosten != null ? `<span>${de(p.kosten, 2)} €</span>` : ""}</div></div>`;
     }).join("");
-    const due = punkte.filter((p) => p.aktiv !== false && (p.status === "bald_faellig" || p.status === "ueberfaellig")).length;
-    el.innerHTML = this._hd("Wartung", add, null) + (due ? `<div class="snote warn">${icon("mdi:wrench-clock")}${due} Punkt${due > 1 ? "e" : ""} bald fällig oder überfällig</div>` : "") + `<div class="slist">${items}</div>`;
+    // Kopf: der nächste fällige aktive Punkt
+    const act = punkte.filter((p) => p.aktiv !== false && (p.rest_tage != null || p.rest_km != null));
+    const key = (p) => (p.rest_tage != null ? p.rest_tage : p.rest_km / 50);
+    const nx = act.sort((a, b) => key(a) - key(b))[0];
+    const lbl = nx ? `<span class="wsum ${this._wartLevel(nx)}">${esc(nx.name)} ${nx.rest_tage != null ? (nx.rest_tage >= 0 ? `in ${tage(nx.rest_tage)}` : "überfällig") : nx.rest_km >= 0 ? `in ${de(nx.rest_km, 0)} km` : "überfällig"}</span>` : "";
+    el.innerHTML = `<div class="hd"><span class="ttl">Wartung</span><span class="lbl">${lbl}</span>${add}</div><div class="slist">${items}</div>`;
   }
 
   /* Ladekarten */
@@ -1962,6 +1986,9 @@ class MgCarDashboard extends HTMLElement {
           + txt("Name", "name", p?.name, "z. B. Inspektion") + (e ? `<label class="sfld chk"><input type="checkbox" name="aktiv" ${p?.aktiv !== false ? "checked" : ""}><span>Aktiv</span></label>` : ""))
         + grp("Fälligkeit", (hu ? "" : fld("Kilometer-Intervall", "km_intervall", p?.km_intervall, "text", 'placeholder="z. B. 30000"')) + fld("Intervall (Monate)", "zeit_intervall_monate", p?.zeit_intervall_monate, "text", 'placeholder="z. B. 24"') + fld("Festes Datum (Monat)", "festes_datum", p?.festes_datum ? p.festes_datum.slice(0, 7) : "", "month"), "ffaell")
         + `<div class="pnote fhint">Mindestens ein Kriterium angeben. Bei mehreren gilt, was zuerst eintritt.</div>`
+        + grp("Erster Termin abweichend (optional)", (hu ? "" : fld("Erstes km-Intervall", "erst_km_intervall", p?.erst_km_intervall, "text", 'placeholder="z. B. 12500"')) + fld("Erstes Intervall (Monate)", "erst_zeit_intervall_monate", p?.erst_zeit_intervall_monate, "text", 'placeholder="z. B. 12"')
+          + (e ? fld("Schon erledigt (Anzahl)", "erledigt_anzahl", p?.erledigt_anzahl ?? "", "text", 'placeholder="0"') : ""), "ferst")
+        + `<div class="pnote">Gilt nur bis zum ersten „erledigt“, z. B. erste Inspektion nach 12.500 km / 12 Monaten, danach das normale Intervall (ev_assistant ab 0.99.57).</div>`
         + grp("Letzter Service", fld("Kilometerstand", "last_done_km", p?.last_done?.km) + fld("Datum", "last_done_datum", p?.last_done?.datum, "date"), "flast")
         + grp("Erinnerung (leer = Standard)", fld("Vorwarnzeit (Monate)", "reminder_monate", rm) + fld("Vorwarnzeit (km)", "reminder_km", p?.reminder_km), "frem")
         + grp("", fld("Kosten €", "kosten", p?.kosten), "fkost");
@@ -2022,7 +2049,7 @@ class MgCarDashboard extends HTMLElement {
     const f = this.shadowRoot.querySelector("#cardlg .sform");
     if (!f) return;
     const hu = key === "tuev", insp = key === "inspektion";
-    const hide = hu ? ["km_intervall", "last_done_km", "last_done_datum", "reminder_km", "kosten"] : insp ? ["festes_datum"] : [];
+    const hide = hu ? ["km_intervall", "erst_km_intervall", "last_done_km", "last_done_datum", "reminder_km", "kosten"] : insp ? ["festes_datum"] : [];
     f.querySelectorAll("[data-f]").forEach((x) => { const h = hide.includes(x.dataset.f); x.hidden = h; if (h) x.querySelector("input").value = ""; });
     f.querySelector(".flast").hidden = hu; f.querySelector(".fkost").hidden = hu;
     f.querySelector(".fhint").textContent = hu ? "Für die HU sind festes Datum und Intervall beide Pflicht." : "Mindestens ein Kriterium angeben. Bei mehreren gilt, was zuerst eintritt.";
@@ -2044,7 +2071,7 @@ class MgCarDashboard extends HTMLElement {
     if (k === "wt-add" || k === "wt-edit") {
       const e = k === "wt-edit", name = v("name"), km = n("km_intervall"), zeit = n("zeit_intervall_monate"), fest = v("festes_datum") || "";
       if (!name && !e) return err("Bitte einen Namen angeben.");
-      for (const [x, l] of [[km, "Kilometer-Intervall"], [zeit, "Intervall"], [n("kosten"), "Kosten"], [n("last_done_km"), "Kilometerstand"], [n("reminder_monate"), "Vorwarnzeit"], [n("reminder_km"), "Vorwarnzeit (km)"]]) if (Number.isNaN(x)) return err(`${l}: bitte eine Zahl eingeben.`);
+      for (const [x, l] of [[n("erst_km_intervall"), "Erstes km-Intervall"], [n("erst_zeit_intervall_monate"), "Erstes Intervall"], [n("erledigt_anzahl"), "Anzahl erledigt"], [km, "Kilometer-Intervall"], [zeit, "Intervall"], [n("kosten"), "Kosten"], [n("last_done_km"), "Kilometerstand"], [n("reminder_monate"), "Vorwarnzeit"], [n("reminder_km"), "Vorwarnzeit (km)"]]) if (Number.isNaN(x)) return err(`${l}: bitte eine Zahl eingeben.`);
       const hasKm = km != null && km !== "", hasZ = zeit != null && zeit !== "";
       const hu = e ? this._wartData().punkte.find((x) => x.id === id)?.typ === "tuev" : v("preset") === "tuev";
       if (hu ? !(fest && hasZ) : !(hasKm || hasZ || fest)) return err(hu ? "Für die HU sind festes Datum und Intervall beide Pflicht." : "Mindestens ein Kriterium angeben (km, Monate oder festes Datum).");
@@ -2058,13 +2085,19 @@ class MgCarDashboard extends HTMLElement {
         const ko = n("kosten"); data.kosten = ko === "" ? "" : ko;
         const rm = n("reminder_monate"); data.reminder_monate = rm === "" ? "" : rm;
         const rk = n("reminder_km"); data.reminder_km = rk === "" ? "" : rk;
+        // Erstintervall/Anzahl nur mitschicken, wenn gesetzt oder geändert (ältere ev_assistant-Versionen kennen die Felder nicht)
+        const o = this._wartData().punkte.find((x) => x.id === id) || {};
+        if (f.elements.erst_km_intervall) { const y = n("erst_km_intervall"); if (y !== "" || o.erst_km_intervall != null) data.erst_km_intervall = y === "" ? "" : y; }
+        { const y = n("erst_zeit_intervall_monate"); if (y !== "" || o.erst_zeit_intervall_monate != null) data.erst_zeit_intervall_monate = y === "" ? "" : Math.round(y); }
+        { const y = n("erledigt_anzahl"); if (y !== "" && y != null && Math.round(y) !== (o.erledigt_anzahl ?? null)) data.erledigt_anzahl = Math.max(0, Math.round(y)); }
       } else {
         svc = "add_maintenance"; data = { name };
         if (v("preset")) data.preset = v("preset");
         if (hasKm) data.km_intervall = km;
         if (hasZ) data.zeit_intervall_monate = Math.round(zeit);
         if (fest) data.festes_datum = monthEnd(fest);
-        for (const x of ["kosten", "reminder_monate", "reminder_km"]) { const y = n(x); if (y !== "" && y != null) data[x] = y; }
+        for (const x of ["kosten", "reminder_monate", "reminder_km", "erst_km_intervall"]) { const y = n(x); if (y !== "" && y != null) data[x] = y; }
+        { const y = n("erst_zeit_intervall_monate"); if (y !== "" && y != null) data.erst_zeit_intervall_monate = Math.round(y); }
       }
       const lk = n("last_done_km"); if (lk !== "" && lk != null) data.last_done_km = lk;
       if (v("last_done_datum")) data.last_done_datum = v("last_done_datum");
@@ -3302,6 +3335,21 @@ const CAR_STYLE = `
 .hd .lbl .sbt{font-size:13px;padding:6px 11px}
 .srow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}.srow.end{justify-content:flex-end;margin-top:4px}
 .slist{display:flex;flex-direction:column;gap:8px}
+.witem{--wc:#facc15;position:relative;padding:12px 14px 12px 16px;border-radius:16px;background:linear-gradient(90deg,color-mix(in srgb,var(--wc) 9%,transparent),transparent 60%),var(--tile);border:1px solid color-mix(in srgb,var(--wc) 30%,var(--tileb));display:flex;flex-direction:column;gap:6px;min-width:0;overflow:hidden}
+.witem::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--wc);box-shadow:0 0 12px var(--wc)}
+.witem.orange{--wc:var(--orange)}.witem.red{--wc:#f87171}.witem.unk,.witem.off{--wc:var(--dim)}.witem.off{opacity:.6}
+.witem.red.over{animation:wpulse 2.4s ease-in-out infinite}
+@keyframes wpulse{0%,100%{box-shadow:0 0 0 rgba(248,113,113,0)}50%{box-shadow:0 0 18px rgba(248,113,113,.35)}}
+.wnext{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px}.wnext .wlbl{width:100%;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.wnext b{font-size:17px;color:var(--wc);font-variant-numeric:tabular-nums}.wnext small{font-size:12.5px;color:var(--muted)}
+.wbar{height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden}.wbar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,color-mix(in srgb,var(--wc) 45%,transparent),var(--wc));box-shadow:0 0 10px var(--wc)}
+.wdone{display:inline-flex;align-items:center;gap:5px;padding:2px 9px 2px 6px;border-radius:9px;color:var(--green);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.35);box-shadow:0 0 12px rgba(52,211,153,.18);position:relative;overflow:hidden}
+.wdone ha-icon{--mdc-icon-size:15px}
+.wdone::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.18) 50%,transparent 70%);transform:translateX(-100%);animation:wshine 4s ease-in-out infinite}
+@keyframes wshine{0%,60%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@media (prefers-reduced-motion:reduce){.witem.red.over,.wdone::after{animation:none}}
+.wsum{font-weight:600;color:#facc15}.wsum.orange{color:var(--orange)}.wsum.red{color:#f87171}.wsum.unk,.wsum.off{color:var(--muted)}
+#swart .hd .lbl{font-size:13.5px}#swart .hd .sbt{margin-left:10px}
 .sitem{--sc:var(--dim);padding:11px 14px;border-radius:16px;background:var(--tile);border:1px solid var(--tileb);display:flex;flex-direction:column;gap:4px;min-width:0}
 .sitem.ok{--sc:var(--green)}.sitem.soon{--sc:var(--orange)}.sitem.over{--sc:#f87171;border-color:rgba(239,68,68,.35)}.sitem.off{opacity:.62}
 .stop{display:flex;align-items:center;gap:8px;min-width:0}.stop b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
