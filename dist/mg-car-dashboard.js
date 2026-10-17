@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=41  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=42  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.16";
+const VERSION = "3.5.17";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -654,9 +654,17 @@ class MgCarDashboard extends HTMLElement {
     const dv = pi?.date && !isNaN(pi.date) ? pi.date : def;
     const val = this._planTime || `${dv.getFullYear()}-${pad(dv.getMonth() + 1)}-${pad(dv.getDate())}T${pad(dv.getHours())}:${pad(dv.getMinutes())}`;
     const soc = this._planSoc ?? (pi?.soc != null ? Math.round(pi.soc) : 80);
+    // Ziel wahlweise als SoC (direkt an evcc) oder als Reichweite in km (ev_assistant rechnet mit dem Verbrauch in SoC um)
+    const kmOk = !!this._hass?.services?.ev_assistant?.set_evcc_charge_plan_range_km, unit = kmOk ? this._planUnitGet() : "soc";
+    const kmPerPct = this._kmPerPct(), km = this._planKm ?? (kmPerPct ? Math.round((soc * kmPerPct) / 10) * 10 : 200);
+    const kmHint = unit === "km" && kmPerPct ? `<small class="mpk">≈ ${Math.min(100, Math.round(km / kmPerPct))} %</small>` : "";
+    const tgt = unit === "km"
+      ? `<div class="tgt"><button class="tb" data-act="mplankm" data-d="-10">−</button><span class="tv">${km}<small> km</small></span><button class="tb" data-act="mplankm" data-d="10">+</button></div>`
+      : `<div class="tgt"><button class="tb" data-act="mplansoc" data-d="-5">−</button><span class="tv">${soc}<small> %</small></span><button class="tb" data-act="mplansoc" data-d="5">+</button></div>`;
+    const usw = kmOk ? `<span class="hsegs mpu"><button class="hseg ${unit === "soc" ? "sel" : ""}" data-act="planunit" data-v="soc" title="Ziel-SoC direkt an evcc">%</button><button class="hseg ${unit === "km" ? "sel" : ""}" data-act="planunit" data-v="km" title="Ziel-Reichweite – ev_assistant rechnet in SoC um">km</button></span>` : "";
     const planForm = `<div class="mplan">
       <div class="mpf">
-        <label>Ladeplan · Ziel<div class="tgt"><button class="tb" data-act="mplansoc" data-d="-5">−</button><span class="tv">${soc}<small> %</small></span><button class="tb" data-act="mplansoc" data-d="5">+</button></div></label>
+        <label><span class="mpl">Ladeplan · Ziel${usw}</span><span class="mpt">${tgt}${kmHint}</span></label>
         <label>bis<input class="pin" type="datetime-local" value="${esc(val)}" data-act="none"></label>
         <span class="mpb"><button class="qbtn" data-act="mplanset"${entry && !this._planReq?.busy ? "" : " disabled"}>${icon(this._planReq?.busy ? "mdi:timer-sand" : "mdi:check")}${this._planReq?.busy ? "Wird gesetzt …" : pi ? "Ändern" : "Plan setzen"}</button>
         ${pi ? `<button class="qbtn ghost" data-act="mplanclear" title="Ladeplan löschen" aria-label="Ladeplan löschen">${icon("mdi:delete-outline")}</button>` : ""}</span>
@@ -702,6 +710,18 @@ class MgCarDashboard extends HTMLElement {
     this._evaCall("set_evcc_realtime_override_min_solar_share", v == null ? {} : { min_solar_share: v })
       .catch((x) => { this._pvMinSet = null; this._mgmtFail(x); });
     this._render_mgmt(); if (this._subPage() === "prof") this._render_misch();
+  }
+
+  _planUnitGet() {
+    if (this._planUnit) return this._planUnit;
+    let v = null; try { v = localStorage.getItem("mg-car-plan-unit"); } catch (x) {}
+    return (this._planUnit = v === "km" ? "km" : "soc");
+  }
+  // km je Prozent SoC aus Reichweite und Ladestand (für die Anzeige „≈ x %“ beim km-Ziel)
+  _kmPerPct() {
+    const c = this._config.car, soc = this._num(c.soc), E = this._eva();
+    const r = parseFloat(this._st(E.range_estimate)?.state) || this._num(c.range);
+    return soc > 5 && r > 0 ? r / soc : null;
   }
 
   /* Hinweis, wenn der Aufruf erfolgreich war, der Plan-Sensor den Plan aber (noch) nicht zeigt. Ältere ev_assistant-
@@ -2770,6 +2790,8 @@ class MgCarDashboard extends HTMLElement {
       return;
     }
     if (act === "mplanclear") { if (window.confirm("Ladeplan löschen?")) this._evaCall("clear_evcc_charge_plan", {}).catch((x) => window.alert(`Ladeplan konnte nicht gelöscht werden: ${x?.message || x}`)); return; }
+    if (act === "planunit") { this._planUnit = el.dataset.v; try { localStorage.setItem("mg-car-plan-unit", this._planUnit); } catch (x) {} this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
+    if (act === "mplankm") { const kp = this._kmPerPct(), base = this._planKm ?? (kp ? Math.round(((this._planSoc ?? 80) * kp) / 10) * 10 : 200); this._planKm = Math.max(10, Math.min(1000, base + Number(el.dataset.d))); this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
     if (act === "mplansoc") { this._planSoc = Math.max(10, Math.min(100, (this._planSoc ?? 80) + Number(el.dataset.d))); this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
     if (act === "mplanset") {
       const v = this.shadowRoot.querySelector("#mgmt .pin")?.value, t = v ? new Date(v).getTime() : NaN;
@@ -2780,7 +2802,10 @@ class MgCarDashboard extends HTMLElement {
       const req = (this._planReq = { busy: true, err: "", info: "", sent: false, target: t });
       const done = (key, msg) => { if (this._planReq !== req) return; clearTimeout(req.timer); req.busy = false; req[key] = msg; this._planTime = v; this._render_mgmt(); };
       req.timer = setTimeout(() => (req.sent ? done("info", this._planSentText()) : done("err", "Keine Antwort von ev_assistant – Ladeplan vermutlich nicht gesetzt.")), 12000);
-      this._evaCall("set_evcc_charge_plan", { target_soc: this._planSoc ?? 80, target_time: Math.round(t / 1000) })
+      const byKm = this._hass?.services?.ev_assistant?.set_evcc_charge_plan_range_km && this._planUnitGet() === "km";
+      const kp = this._kmPerPct(), kmV = this._planKm ?? (kp ? Math.round(((this._planSoc ?? 80) * kp) / 10) * 10 : 200);
+      (byKm ? this._evaCall("set_evcc_charge_plan_range_km", { target_range_km: kmV, target_time: Math.round(t / 1000) })
+        : this._evaCall("set_evcc_charge_plan", { target_soc: this._planSoc ?? 80, target_time: Math.round(t / 1000) }))
         .then(() => { req.sent = true; })
         .catch((x) => done("err", `Ladeplan konnte nicht gesetzt werden: ${x?.message || x?.error?.message || x}`));
       this._planTime = v; this._render_mgmt(); return;
@@ -3021,6 +3046,8 @@ const CAR_STYLE = `
 .mmh .glyph{font-size:14px;font-weight:800;letter-spacing:-.02em;min-width:20px;text-align:center}
 .mmh .msub{font-size:12px;font-weight:600;opacity:.75;white-space:nowrap}
 .mmh b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpl{display:flex;align-items:center;gap:8px;min-height:24px}.mpu{display:inline-flex;margin:0;padding:2px}.mpu .hseg{padding:2px 10px;font-size:12px;min-height:0;letter-spacing:0}
+.mpt{display:flex;align-items:center;gap:8px}.mpk{font-size:12.5px;color:var(--muted);white-space:nowrap}
 .mpvmin{position:relative}.mpvmin select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
 .mpvmin:focus-within{border-color:rgba(255,255,255,.3)}
 .mmode.vorgabe{flex:none;min-width:0}
