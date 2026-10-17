@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=38  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=39  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.13";
+const VERSION = "3.5.14";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -320,6 +320,7 @@ class MgCarDashboard extends HTMLElement {
     if (this._subPage() === "prof") this._render_prof();
     if (this._subPage() === "set") this._render_set();
     if (this._dlg === "ana") this._renderAnaDlg();
+    if (this._dlg === "pend") this._renderPend();
   }
 
   /* evcc setzt die Sitzungswerte nach dem Laden auf 0 → letzte echte Sitzung aus dem Verlauf holen */
@@ -435,7 +436,7 @@ class MgCarDashboard extends HTMLElement {
       const t = (x.start_ts || x.erfasst_ts) ? (x.start_ts || x.erfasst_ts) * 1000 : (x.datum ? Date.parse(x.datum) : null);
       if (!t) continue;
       out.list.push({ type: "ext", ts: t, te: null, kwh: x.kwh ?? null, pv: null, cost: x.kosten ?? null, per: x.preis_kwh ?? null,
-        dur: x.dauer_min ?? null, s0: x.soc_start ?? null, s1: x.soc_end ?? null, who: x.anbieter || "Fremdladung", ac: x.ac_dc || x.typ || "" });
+        dur: x.dauer_min ?? null, s0: x.soc_start ?? null, s1: x.soc_end ?? null, who: x.anbieter || "Fremdladung", ac: x.ac_dc || x.typ || "", raw: x });
     }
     out.list.sort((a, b) => b.ts - a.ts);
     if (home?.error && ext?.error) out.err = "Abruf bei ev_assistant fehlgeschlagen";
@@ -468,7 +469,8 @@ class MgCarDashboard extends HTMLElement {
       const per = x.per != null ? x.per : x.cost != null && x.kwh > 0.05 ? x.cost / x.kwh : null;
       const pv = x.pv != null ? Math.max(0, Math.min(100, x.pv)) : null;
       const avgP = x.kwh != null && x.dur > 1 ? x.kwh / (x.dur / 60) : null, soc = x.s0 != null && x.s1 != null ? `${Math.round(x.s0)} → ${Math.round(x.s1)} %` : null;
-      return `${mh}<div class="chr ${x.type}">
+      const ed = x.type === "ext" && x.raw?.erfasst_ts != null;
+      return `${mh}<div class="chr ${x.type}${ed ? " ted" : ""}"${ed ? ` data-act="set" data-k="ch-edit" data-id="${esc(x.raw.erfasst_ts)}" title="Fremdladung bearbeiten"` : ""}>
         <span class="chi">${icon(x.type === "home" ? "mdi:home-lightning-bolt" : "mdi:ev-station")}</span>
         <span class="chd"><b>${WD[dt.getDay()]} ${dt.getDate()}. ${MON[dt.getMonth()]}</b><small>${pad(dt.getHours())}:${pad(dt.getMinutes())} Uhr${dur ? ` · ${dur}` : ""}${x.type === "ext" ? ` · ${esc(x.who)}` : ""}</small>${soc || avgP != null ? `<small class="chsm">${[soc, avgP != null && `Ø ${de(avgP, 1)} kW`].filter(Boolean).join(" · ")}</small>` : ""}</span>
         <span class="chpv">${pv != null ? `<i class="pvbar"><i style="width:${pv}%"></i></i><small>${Math.round(pv)} % PV</small>` : ""}</span>
@@ -1080,7 +1082,7 @@ class MgCarDashboard extends HTMLElement {
       const ts = (v) => (v ? v * (v < 1e12 ? 1000 : 1) : null);
       const list = (res?.trips || []).map((r) => {
         const t0 = ts(r.start_ts || r.erfasst_ts), t1 = ts(r.end_ts), km = parseFloat(r.km), kwh = parseFloat(r.verbrauch_kwh);
-        return { start: t0 ? new Date(t0).toISOString() : r.datum, start_ort: r.start_ort, ziel_ort: r.end_ort, strecke: isNaN(km) ? null : km,
+        return { raw: r, start: t0 ? new Date(t0).toISOString() : r.datum, start_ort: r.start_ort, ziel_ort: r.end_ort, strecke: isNaN(km) ? null : km,
           verbrauch_kwh: isNaN(kwh) ? null : kwh, avg_verbrauch: km > 0.5 && !isNaN(kwh) ? kwh / km * 100 : null,
           dauer: t0 && t1 > t0 ? Math.round((t1 - t0) / 60000) : null, avg_speed: t0 && t1 > t0 && km > 0 ? km / ((t1 - t0) / 3600000) : null };
       });
@@ -1098,7 +1100,7 @@ class MgCarDashboard extends HTMLElement {
     return c.trips_max > 0 ? l.slice(0, c.trips_max) : l;
   }
 
-  _tripRows(list) {
+  _tripRows(list, edit = false) {
     const dt = (v) => { const d = new Date(v); return isNaN(d) ? null : d; };
     const place = (x) => ({ home: "Zuhause", zuhause: "Zuhause", Home: "Zuhause", not_home: "unterwegs", "außerhalb": "unterwegs" }[x] || x || "?");
     let lastDay = "";
@@ -1106,7 +1108,8 @@ class MgCarDashboard extends HTMLElement {
       const s = dt(t.start), day = s ? `${WD[s.getDay()]}, ${s.getDate()}. ${MON[s.getMonth()]}${s.getFullYear() !== new Date().getFullYear() ? ` ${s.getFullYear()}` : ""}` : "";
       const head = day !== lastDay ? `<div class="tday">${esc(day)}</div>` : ""; lastDay = day;
       const km = parseFloat(t.strecke), kwh = parseFloat(t.verbrauch_kwh), avg = parseFloat(t.avg_verbrauch);
-      return `${head}<div class="trip">
+      const ed = edit && t.raw?.erfasst_ts != null;
+      return `${head}<div class="trip${ed ? " ted" : ""}"${ed ? ` data-act="set" data-k="trip-edit" data-id="${esc(t.raw.erfasst_ts)}" title="Fahrt bearbeiten"` : ""}>
         <span class="ttime">${s ? `${pad(s.getHours())}:${pad(s.getMinutes())}` : ""}</span>
         <span class="troute"><b>${esc(place(t.start_ort))}</b>${icon("mdi:arrow-right")}<b>${esc(place(t.ziel_ort))}</b><small>${t.dauer != null ? `${esc(t.dauer)} min` : ""}${t.avg_speed ? ` · Ø ${de(parseFloat(t.avg_speed), 0)} km/h` : ""}</small></span>
         <span class="tkm"><b>${isNaN(km) ? "–" : de(km, 0)}</b><small>km</small></span>
@@ -1180,7 +1183,7 @@ class MgCarDashboard extends HTMLElement {
         <div><span>Ø Verbrauch</span><b>${km > 1 ? de(kwh / km * 100, 1) : "–"}<small>kWh/100</small></b></div>
         <div><span>Fahrzeit</span><b>${min >= 60 ? `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}` : Math.round(min)}<small>${min >= 60 ? "h" : "min"}</small></b></div>
       </div>
-      <div class="dbody">${list.length ? `<div class="tlist">${this._tripRows(list.slice(0, this._dlgN))}</div>${this._moreRow(Math.min(this._dlgN, list.length), list.length)}` : `<div class="empty">Keine Fahrten gefunden</div>`}</div></div>`;
+      <div class="dbody">${list.length ? `<div class="tlist">${this._tripRows(list.slice(0, this._dlgN), true)}</div>${this._moreRow(Math.min(this._dlgN, list.length), list.length)}` : `<div class="empty">Keine Fahrten gefunden</div>`}</div></div>`;
     const b = d.querySelector(".dbody"); if (b) b.scrollTop = sc;
   }
 
@@ -1870,6 +1873,73 @@ class MgCarDashboard extends HTMLElement {
     if (top) box.scrollTop = 0;
   }
 
+  /* Offene (erkannte, noch nicht bestätigte) Fremdladungen und Fahrten aus ev_assistant */
+  _pendItems() {
+    const pc = this._ea("pending"), pt = this._ea("trip_pending");
+    const l = (st, k) => (st && st.state === "on" && Array.isArray(st.attributes?.[k]) ? st.attributes[k] : []);
+    return { charges: l(pc, "offene_ladungen"), trips: l(pt, "offene_fahrten") };
+  }
+  _openPend() { this._pendSig = null; this._openDlg("pend"); this._renderPend(); }
+  _renderPend() {
+    const d = this.shadowRoot.getElementById("cardlg");
+    if (!d || this._dlg !== "pend") return;
+    const P = this._pendItems(), sig = P.charges.map((x) => x.start_ts).join() + "|" + P.trips.map((x) => x.start_ts).join();
+    if (sig === this._pendSig) return;   // Eingaben nicht überschreiben – nur neu aufbauen, wenn Einträge dazukommen oder wegfallen
+    this._pendSig = sig;
+    if (!P.charges.length && !P.trips.length) { d.close(); return; }
+    // bereits Eingetipptes über einen Neuaufbau retten
+    const keep = {};
+    d.querySelectorAll("form.pform").forEach((f) => { keep[f.dataset.key] = Object.fromEntries([...f.elements].filter((e) => e.name).map((e) => [e.name, e.value])); });
+    const anb = this._ea("charging_location_breakdown")?.attributes?.bekannte_anbieter || [];
+    const when = (ts, min) => `${ts ? new Date(ts * 1000).toLocaleString("de-DE", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}${min != null ? ` · ${min >= 60 ? `${Math.floor(min / 60)}:${pad(Math.round(min % 60))} h` : `${Math.round(min)} min`}` : ""}`;
+    const inp = (key, lbl, name, val, attrs = 'inputmode="decimal"') => `<label class="sfld"><span>${lbl}</span><input name="${name}" type="text" ${attrs} value="${esc(keep[key]?.[name] ?? val ?? "")}"></label>`;
+    const ch = P.charges.map((x) => {
+      const key = `c${x.start_ts}`, kwh = x.energy_kwh != null ? String(Math.round(x.energy_kwh * 100) / 100).replace(".", ",") : "";
+      return `<form class="pform sform" data-key="${key}" onsubmit="return false"><div class="ptop">${icon("mdi:ev-station")}<span><b>Fremdladung erkannt</b><small>${when(x.start_ts, x.duration_min)}</small></span>
+        <em>${x.energy_kwh != null ? `${de(x.energy_kwh, 1)} kWh` : ""}${x.soc_start != null && x.soc_end != null ? `<small>${Math.round(x.soc_start)} → ${Math.round(x.soc_end)} %</small>` : ""}</em></div>
+        <div class="sflds">${inp(key, "kWh (Beleg)", "kwh", kwh)}${inp(key, "€/kWh (Beleg)", "price", "", 'inputmode="decimal" placeholder="0,000"')}${inp(key, "Startgebühr €", "fee", "", 'inputmode="decimal" placeholder="0,00"')}
+          ${inp(key, "Blockiergebühr €", "block", "", 'inputmode="decimal" placeholder="0,00"')}${inp(key, "Zeitgebühr €", "time", "", 'inputmode="decimal" placeholder="0,00"')}${inp(key, "Anbieter", "anbieter", "", 'list="panb" placeholder="z. B. EnBW"')}</div>
+        <div class="ferr"></div><div class="srow end"><button type="button" class="sbt" data-act="set" data-k="pend-no" data-t="c" data-ts="${x.start_ts}">Verwerfen</button><button type="button" class="sbt pri" data-act="set" data-k="pend-ok" data-t="c" data-ts="${x.start_ts}">Bestätigen</button></div></form>`;
+    }).join("");
+    const tr = P.trips.map((x) => {
+      const key = `t${x.start_ts}`;
+      return `<form class="pform sform" data-key="${key}" onsubmit="return false"><div class="ptop">${icon("mdi:map-marker-question")}<span><b>Fahrt erkannt</b><small>${when(x.start_ts, x.duration_min)}</small></span><em>${x.km != null ? `${de(x.km, 1)} km` : ""}</em></div>
+        <div class="sflds">${inp(key, "Startort", "start_ort", x.start_ort_vorschlag, "")}${inp(key, "Zielort", "end_ort", x.end_ort_vorschlag, "")}</div>
+        <div class="ferr"></div><div class="srow end"><button type="button" class="sbt" data-act="set" data-k="pend-no" data-t="t" data-ts="${x.start_ts}">Verwerfen</button><button type="button" class="sbt pri" data-act="set" data-k="pend-ok" data-t="t" data-ts="${x.start_ts}">Bestätigen</button></div></form>`;
+    }).join("");
+    d.innerHTML = `<div class="dpan sdlg"><div class="dhd"><span class="dico">${icon("mdi:clipboard-check-outline")}</span>
+      <span class="rtx"><span class="rname">Bestätigen</span><span class="rsub">Von ev_assistant erkannt, nicht automatisch übernommen</span></span>
+      <button class="dx" data-act="cardclose" aria-label="Schließen">${icon("mdi:close")}</button></div>
+      <div class="dbody">${ch}${tr}<datalist id="panb">${anb.map((a) => `<option value="${esc(a)}"></option>`).join("")}</datalist></div></div>`;
+  }
+  _pendAct(k, ds) {
+    const f = ds.t && this.shadowRoot.querySelector(`#cardlg form.pform[data-key="${ds.t}${ds.ts}"]`);
+    if (!f) return;
+    const ts = Number(ds.ts), v = (x) => String(f.elements[x]?.value ?? "").trim(), num = (x) => { const r = v(x).replace(",", "."); return r === "" ? null : parseFloat(r); };
+    const err = (m) => { f.querySelector(".ferr").textContent = m; };
+    let svc, data;
+    if (k === "pend-no") { svc = ds.t === "c" ? "discard_pending" : "discard_pending_trip"; data = { start_ts: ts }; }
+    else if (ds.t === "c") {
+      const kwh = num("kwh"), price = num("price");
+      if (kwh == null || isNaN(kwh) || price == null || isNaN(price)) return err("Bitte kWh und Preis je kWh vom Beleg eintragen.");
+      const fee = (x) => { const y = num(x); return y == null || isNaN(y) ? 0 : y; };
+      svc = "log_charge"; data = { kwh, price_kwh: price, start_ts: ts, start_fee: fee("fee"), block_fee: fee("block"), time_fee: fee("time") };
+      if (v("anbieter")) data.anbieter = v("anbieter");
+    } else {
+      if (!v("start_ort") || !v("end_ort")) return err("Bitte Start- und Zielort eintragen.");
+      svc = "log_trip"; data = { start_ort: v("start_ort"), end_ort: v("end_ort"), start_ts: ts };
+    }
+    f.querySelectorAll("button").forEach((b) => { b.disabled = true; }); err("");
+    this._evaCall(svc, data).then(() => {
+      f.classList.add("done");
+      if (ds.t === "t") this._loadTrips(true); else this._charges = null;
+    }).catch((x) => { f.querySelectorAll("button").forEach((b) => { b.disabled = false; }); err(x?.message || String(x)); });
+  }
+
+  // Unix-Zeit (s) <-> <input type="datetime-local"> in Ortszeit
+  _dtl(ts) { if (ts == null || ts === "") return ""; const d = new Date(ts * 1000); return isNaN(d) ? "" : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+  _fromDtl(v) { if (!v) return null; const t = new Date(v).getTime(); return isNaN(t) ? null : t / 1000; }
+
   /* Formulare im Popup */
   _openForm(kind, id, extra = {}) {
     this._form = { kind, id, ...extra };
@@ -1913,17 +1983,38 @@ class MgCarDashboard extends HTMLElement {
       title = "Kennzahlen zurücksetzen"; sub = "Neuer Startpunkt für Verbrauch und Ersparnis"; save = "Zurücksetzen"; danger = true;
       body = grp("", fld("kWh seit Einrichtung", "home_kwh_since_setup", "", "text", 'placeholder="leer = 0"') + fld("Kosten € seit Einrichtung", "home_cost_since_setup", "", "text", 'placeholder="leer = 0"') + fld("km seit Einrichtung", "km_driven", "", "text", 'placeholder="leer = 0"'))
         + `<div class="pnote">Fahrtenbuch und Ladehistorie bleiben unverändert. Nicht rückgängig machbar.</div>`;
+    } else if (k === "trip-edit") {
+      const t = (this._evaTrips?.list || []).map((x) => x.raw).find((x) => x && String(x.erfasst_ts) === String(F.id)) || {};
+      title = "Fahrt bearbeiten"; sub = `${esc(t.start_ort || "?")} → ${esc(t.end_ort || "?")}`;
+      body = grp("", txt("Startort", "start_ort", t.start_ort) + txt("Zielort", "end_ort", t.end_ort))
+        + grp("Zeit", fld("Start", "start_ts", this._dtl(t.start_ts), "datetime-local") + fld("Ende", "end_ts", this._dtl(t.end_ts), "datetime-local"))
+        + grp("Strecke", fld("Strecke (km)", "km", t.km) + fld("km-Stand Start", "odo_start", t.odo_start) + fld("km-Stand Ende", "odo_end", t.odo_end))
+        + grp("Akku", fld("SoC Start (%)", "soc_start", t.soc_start) + fld("SoC Ende (%)", "soc_end", t.soc_end) + fld("Verbrauch (kWh)", "verbrauch_kwh", t.verbrauch_kwh))
+        + `<div class="srow"><button type="button" class="sbt red" data-act="set" data-k="trip-del" data-id="${esc(F.id)}">${icon("mdi:delete-outline")}Fahrt löschen</button></div>`;
+    } else if (k === "ch-edit") {
+      const h = (this._charges?.list || []).map((x) => x.raw).find((x) => x && String(x.erfasst_ts) === String(F.id)) || {};
+      const karten = this._ea("ladekarten_kosten")?.attributes?.karten || [], anb = this._ea("charging_location_breakdown")?.attributes?.bekannte_anbieter || [];
+      const end = h.start_ts != null && h.dauer_min != null ? h.start_ts + h.dauer_min * 60 : null;
+      title = "Fremdladung bearbeiten"; sub = `${h.start_ts ? new Date(h.start_ts * 1000).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" }) : ""}${h.anbieter ? ` · ${esc(h.anbieter)}` : ""}`;
+      body = grp("Beleg", fld("kWh", "kwh", h.kwh) + fld("€/kWh", "price_kwh", h.preis_kwh) + fld("Startgebühr €", "start_fee", h.startgebuehr || 0) + fld("Blockiergebühr €", "block_fee", h.blockiergebuehr || 0) + fld("Zeitgebühr €", "time_fee", h.zeitgebuehr || 0))
+        + grp("Zeit und Akku", fld("Start", "start_ts", this._dtl(h.start_ts), "datetime-local") + fld("Ladeende", "end_ts", this._dtl(end), "datetime-local") + fld("SoC Start (%)", "soc_start", h.soc_start) + fld("SoC Ende (%)", "soc_end", h.soc_end))
+        + grp("", `<label class="sfld" data-f="anbieter"><span>Anbieter</span><input name="anbieter" type="text" list="fanb" value="${esc(h.anbieter || "")}"></label><datalist id="fanb">${anb.map((a) => `<option value="${esc(a)}"></option>`).join("")}</datalist>`
+          + (karten.length ? `<label class="sfld"><span>Ladekarte</span><select name="karte_id"><option value="">– keine –</option>${karten.map((x) => `<option value="${esc(x.id)}"${x.id === h.karte_id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>` : ""))
+        + `<div class="srow"><button type="button" class="sbt red" data-act="set" data-k="ch-del" data-id="${esc(F.id)}">${icon("mdi:delete-outline")}Fremdladung löschen</button></div>`;
+    } else if (k === "trip-del" || k === "ch-del") {
+      title = k === "trip-del" ? "Fahrt löschen" : "Fremdladung löschen"; save = "Löschen"; danger = true;
+      body = `<div class="pnote">Diesen Eintrag dauerhaft löschen? Das lässt sich nicht rückgängig machen.</div>`;
     } else if (k === "restore") {
       const R = this._restore || {};
       title = "Backup wiederherstellen"; sub = `${esc(R.name || "")} (${R.kb ?? "?"} KB)`; save = "Wiederherstellen"; danger = true;
       body = `<div class="pnote">ALLE aktuellen Daten (Fahrtenbuch, Ladehistorie, Ladekarten, Wartungsplan, Kennzahlen) werden ersetzt. ev_assistant legt vorher automatisch ein Sicherheits-Backup des jetzigen Stands an.</div>`
         + grp("", txt("Zum Bestätigen WIEDERHERSTELLEN eintippen", "confirm", "", "WIEDERHERSTELLEN"));
     }
-    d.innerHTML = `<div class="dpan sdlg"><div class="dhd"><span class="dico">${icon(k.startsWith("wt") ? "mdi:wrench-clock" : k.startsWith("lk") ? "mdi:credit-card-multiple-outline" : "mdi:cog-outline")}</span>
+    d.innerHTML = `<div class="dpan sdlg"><div class="dhd"><span class="dico">${icon(k.startsWith("wt") ? "mdi:wrench-clock" : k.startsWith("lk") ? "mdi:credit-card-multiple-outline" : k.startsWith("trip") ? "mdi:map-marker-path" : k.startsWith("ch") ? "mdi:ev-station" : "mdi:cog-outline")}</span>
       <span class="rtx"><span class="rname">${title}</span><span class="rsub">${sub}</span></span>
       <button class="dx" data-act="cardclose" aria-label="Schließen">${icon("mdi:close")}</button></div>
       <form class="dbody sform" onsubmit="return false">${body}<div class="ferr"></div>
-      <div class="srow end"><button type="button" class="sbt" data-act="cardclose">Abbrechen</button><button type="button" class="sbt pri${danger ? " red" : ""}" data-act="set" data-k="save">${save}</button></div></form></div>`;
+      <div class="srow end"><button type="button" class="sbt" data-act="${F.back ? "set" : "cardclose"}" data-k="back">Abbrechen</button><button type="button" class="sbt pri${danger ? " red" : ""}" data-act="set" data-k="save">${save}</button></div></form></div>`;
     if (k === "wt-add") this._wtPreset("");
   }
   // Vorlage im Formular: Felder ein-/ausblenden (HU braucht kein km-Intervall) und leere Felder vorbelegen
@@ -1997,7 +2088,25 @@ class MgCarDashboard extends HTMLElement {
     else if (k === "reset") {
       for (const x of ["home_kwh_since_setup", "home_cost_since_setup", "km_driven"]) { const y = n(x); if (Number.isNaN(y)) return err("Bitte nur Zahlen eingeben."); if (y !== "") data[x] = y; }
       svc = "reset_lifetime_kpis";
-    } else if (k === "restore") {
+    } else if (k === "trip-edit") {
+      const so = v("start_ort"), eo = v("end_ort");
+      if (!so || !eo) return err("Start- und Zielort sind nötig.");
+      svc = "edit_trip"; data = { erfasst_ts: Number(F.id), start_ort: so, end_ort: eo };
+      for (const x of ["km", "odo_start", "odo_end", "soc_start", "soc_end", "verbrauch_kwh"]) { const y = n(x); if (Number.isNaN(y)) return err("Bitte nur Zahlen eingeben."); if (y !== "" && y != null) data[x] = y; }
+      // Zeiten nur mitschicken, wenn geändert (das Feld kennt keine Sekunden)
+      const o = (this._evaTrips?.list || []).map((x) => x.raw).find((x) => x && String(x.erfasst_ts) === String(F.id)) || {};
+      for (const x of ["start_ts", "end_ts"]) { const y = this._fromDtl(v(x)); if (y != null && v(x) !== this._dtl(o[x])) data[x] = y; }
+    } else if (k === "ch-edit") {
+      svc = "edit_charge"; data = { erfasst_ts: Number(F.id) };
+      for (const [x, key] of [["kwh", "kwh"], ["price_kwh", "price_kwh"], ["start_fee", "start_fee"], ["block_fee", "block_fee"], ["time_fee", "time_fee"], ["soc_start", "soc_start"], ["soc_end", "soc_end"]]) { const y = n(x); if (Number.isNaN(y)) return err("Bitte nur Zahlen eingeben."); if (y !== "" && y != null) data[key] = y; }
+      const o = (this._charges?.list || []).map((x) => x.raw).find((x) => x && String(x.erfasst_ts) === String(F.id)) || {};
+      const oEnd = o.start_ts != null && o.dauer_min != null ? o.start_ts + o.dauer_min * 60 : null;
+      for (const [x, ov] of [["start_ts", o.start_ts], ["end_ts", oEnd]]) { const y = this._fromDtl(v(x)); if (y != null && v(x) !== this._dtl(ov)) data[x] = y; }
+      if (f.elements.karte_id) data.karte_id = v("karte_id") === "" ? 0 : parseInt(v("karte_id"), 10);
+      data.anbieter = v("anbieter") || "";
+    } else if (k === "trip-del") { svc = "delete_trip"; data = { erfasst_ts: Number(F.id) }; }
+    else if (k === "ch-del") { svc = "delete_charge"; data = { erfasst_ts: Number(F.id) }; }
+    else if (k === "restore") {
       if (v("confirm") !== "WIEDERHERSTELLEN") return err("Bitte WIEDERHERSTELLEN eintippen.");
       svc = "restore_backup"; data = { backup_data: this._restore?.text };
     }
@@ -2005,11 +2114,17 @@ class MgCarDashboard extends HTMLElement {
     const btn = f.querySelector('[data-k="save"]'); btn.disabled = true; err("");
     this._evaCall(svc, data).then(() => {
       if (k === "restore") this._restore = null;
+      if (k.startsWith("trip")) { this._loadTrips(true); return this._openTrips(); }
+      if (k.startsWith("ch-")) { this._charges = null; return this._openCharges(); }
       this.shadowRoot.getElementById("cardlg")?.close();
       if (k === "reset" || k === "restore") this._toast(k === "reset" ? "Kennzahlen zurückgesetzt." : "Backup wiederhergestellt.");
     }).catch(() => { btn.disabled = false; });
   }
   _setAct(k, ds) {
+    if (["trip-edit", "trip-del"].includes(k)) return this._openForm(k, ds.id, { back: "trips" });
+    if (["ch-edit", "ch-del"].includes(k)) return this._openForm(k, ds.id, { back: "charges" });
+    if (k === "back") return this._form?.back === "trips" ? this._openTrips() : this._form?.back === "charges" ? this._openCharges() : this.shadowRoot.getElementById("cardlg")?.close();
+    if (k === "pend-ok" || k === "pend-no") return this._pendAct(k, ds);
     if (["wt-add", "wt-edit", "wt-done", "wt-del", "lk-add", "lk-edit", "lk-del", "lk-stufe", "reset"].includes(k)) return this._openForm(k, ds.id);
     if (k === "save") return this._saveForm();
     if (k === "lk-sdel") return this._evaCall("delete_ladekarte_preisstufe", { karte_id: Number(ds.id), ab_datum: ds.ab }).catch(() => {});
@@ -2339,8 +2454,9 @@ class MgCarDashboard extends HTMLElement {
 
     // Hinweise von ev_assistant (Fremdladung/Fahrt erfassen, Wartung)
     const flags = [];
-    if (this._st(E.pending)?.state === "on") flags.push(["mdi:ev-station", "Fremdladung erfassen", E.pending]);
-    if (this._st(E.trip_pending)?.state === "on") flags.push(["mdi:map-marker-question", "Fahrt erfassen", E.trip_pending]);
+    // offene Fremdladungen/Fahrten (nicht automatisch übernommen): Hinweis oben rechts statt des Pfeils, öffnet „Bestätigen“
+    const pend = this._pendItems(), nP = pend.charges.length + pend.trips.length;
+    const pendBtn = nP ? `<button class="cpend" data-act="pendopen" title="Erkannte Fremdladungen und Fahrten bestätigen">${icon(pend.charges.length ? "mdi:ev-station" : "mdi:map-marker-question")}<b>${nP}</b><span>${nP === 1 ? (pend.charges.length ? "Ladung" : "Fahrt") : "offen"} bestätigen</span></button>` : "";
     const wf = this._st(E.wartung_faellig);
     if (wf && ["on", "true", "ja", "fällig"].includes(String(wf.state).toLowerCase())) flags.push(["mdi:wrench", "Wartung fällig", E.wartung_faellig]);
 
@@ -2348,7 +2464,7 @@ class MgCarDashboard extends HTMLElement {
       <div class="hd">${(this._evaVehicles || []).length > 1
         ? `<button class="ttl vsel" data-act="vehmenu" title="Fahrzeug wählen">${esc(name)}${icon("mdi:chevron-down", "vchv")}</button>`
         : `<span class="ttl">${esc(name)}</span>`}<span class="lbl ${charging ? "chg" : ""}">${charging ? `${icon("mdi:lightning-bolt")} ` : ""}${esc(status)}</span>
-        <button class="arrow" data-act="cardetail" aria-label="Details">${icon("mdi:chevron-right")}</button></div>
+        ${pendBtn}</div>
       <div class="carbody" data-act="cardetail">
         <div><div class="soc">${hasSoc ? Math.round(soc) : "–"}<sup>%</sup></div>
           <div class="range">${range ? `${Math.round(this._num(c.range))} km` : rEst ? `${rEst.v} km` : ""}${range && rEst ? `<small> · real ≈ ${rEst.v} km</small>` : ""}</div></div>
@@ -2438,6 +2554,7 @@ class MgCarDashboard extends HTMLElement {
     const { act, entity } = el.dataset;
     if (act === "charges") { this._openCharges(); return; }
     if (act === "trips") { this._openTrips(); return; }
+    if (act === "pendopen") { this._openPend(); return; }
     if (act === "mset") {
       this._closeMenu();
       const id = el.dataset.entity;
@@ -3168,6 +3285,16 @@ const CAR_STYLE = `
 @container (max-width:1180px){.pgrid{grid-template-columns:1fr!important}.ptiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @container (max-width:720px){.pdays{grid-template-columns:repeat(4,minmax(0,1fr))}.pcols{grid-template-columns:1fr}}
 .sgrid{grid-template-columns:1.5fr 1fr!important;align-content:start}
+.cpend{display:inline-flex;align-items:center;gap:6px;flex:none;padding:7px 12px;border-radius:14px;background:rgba(249,115,22,.14);border:1px solid rgba(249,115,22,.45);color:var(--orange);font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.cpend ha-icon{--mdc-icon-size:17px}.cpend b{font-size:14px}.cpend:hover{background:rgba(249,115,22,.22)}
+@container (max-width:420px){.cpend span{display:none}}
+.pform{padding:14px;border-radius:18px;background:var(--tile);border:1px solid var(--tileb);display:flex;flex-direction:column;gap:12px}
+.pform.done{opacity:.45;pointer-events:none}
+.ptop{display:flex;align-items:center;gap:10px}.ptop ha-icon{--mdc-icon-size:22px;color:var(--orange)}
+.ptop span{display:flex;flex-direction:column;min-width:0}.ptop span small{color:var(--muted);font-size:12.5px}
+.ptop em{margin-left:auto;font-style:normal;font-weight:700;font-size:17px;text-align:right;display:flex;flex-direction:column;font-variant-numeric:tabular-nums}.ptop em small{font-size:12px;color:var(--muted);font-weight:500}
+.trip.ted,.chr.ted{cursor:pointer;transition:border-color .2s}.trip.ted:hover,.chr.ted:hover{border-color:rgba(255,255,255,.22)}
+.sbt.red{color:#f87171;border-color:rgba(239,68,68,.35)}
 .wrap.fit .sgrid{grid-template-rows:none;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
 .sbt{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:12px;background:var(--tile);border:1px solid var(--tileb);color:inherit;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:border-color .2s}
 .sbt:hover{border-color:rgba(255,255,255,.22)}.sbt ha-icon{--mdc-icon-size:16px}.sbt[disabled],.sbt.dis{opacity:.5;pointer-events:none}
