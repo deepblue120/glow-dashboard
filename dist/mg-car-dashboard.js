@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=40  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=41  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.15";
+const VERSION = "3.5.16";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -1988,8 +1988,9 @@ class MgCarDashboard extends HTMLElement {
         + `<div class="pnote fhint">Mindestens ein Kriterium angeben. Bei mehreren gilt, was zuerst eintritt.</div>`
         + grp("Erster Termin abweichend (optional)", (hu ? "" : fld("Erstes km-Intervall", "erst_km_intervall", p?.erst_km_intervall, "text", 'placeholder="z. B. 12500"')) + fld("Erstes Intervall (Monate)", "erst_zeit_intervall_monate", p?.erst_zeit_intervall_monate, "text", 'placeholder="z. B. 12"')
           + (e ? fld("Schon erledigt (Anzahl)", "erledigt_anzahl", p?.erledigt_anzahl ?? "", "text", 'placeholder="0"') : ""), "ferst")
-        + `<div class="pnote">Gilt nur bis zum ersten „erledigt“, z. B. erste Inspektion nach 12.500 km / 12 Monaten, danach das normale Intervall (ev_assistant ab 0.99.57).</div>`
+        + `<div class="pnote">Nur zusätzlich zum normalen Intervall unter „Fälligkeit“: gilt bis zum ersten „erledigt“, danach das normale. Beispiel: Fälligkeit 25.000 km / 24 Monate, erster Termin 12.500 km / 12 Monate (ev_assistant ab 0.99.57).</div>`
         + grp("Letzter Service", fld("Kilometerstand", "last_done_km", p?.last_done?.km) + fld("Datum", "last_done_datum", p?.last_done?.datum, "date"), "flast")
+        + `<div class="pnote">Noch nie gemacht? Datum der Erstzulassung und 0 km eintragen – ab da zählt das (erste) Intervall.</div>`
         + grp("Erinnerung (leer = Standard)", fld("Vorwarnzeit (Monate)", "reminder_monate", rm) + fld("Vorwarnzeit (km)", "reminder_km", p?.reminder_km), "frem")
         + grp("", fld("Kosten €", "kosten", p?.kosten), "fkost");
     } else if (k === "wt-done") {
@@ -2074,7 +2075,10 @@ class MgCarDashboard extends HTMLElement {
       for (const [x, l] of [[n("erst_km_intervall"), "Erstes km-Intervall"], [n("erst_zeit_intervall_monate"), "Erstes Intervall"], [n("erledigt_anzahl"), "Anzahl erledigt"], [km, "Kilometer-Intervall"], [zeit, "Intervall"], [n("kosten"), "Kosten"], [n("last_done_km"), "Kilometerstand"], [n("reminder_monate"), "Vorwarnzeit"], [n("reminder_km"), "Vorwarnzeit (km)"]]) if (Number.isNaN(x)) return err(`${l}: bitte eine Zahl eingeben.`);
       const hasKm = km != null && km !== "", hasZ = zeit != null && zeit !== "";
       const hu = e ? this._wartData().punkte.find((x) => x.id === id)?.typ === "tuev" : v("preset") === "tuev";
+      const hasErst = !!(n("erst_km_intervall") || n("erst_zeit_intervall_monate"));
+      if (!hu && hasErst && !(hasKm || hasZ || fest)) return err("Das erste Intervall gilt nur bis zum ersten Termin. Trag unter „Fälligkeit“ auch das normale Intervall ein (z. B. 25.000 km / 24 Monate) – das gilt danach.");
       if (hu ? !(fest && hasZ) : !(hasKm || hasZ || fest)) return err(hu ? "Für die HU sind festes Datum und Intervall beide Pflicht." : "Mindestens ein Kriterium angeben (km, Monate oder festes Datum).");
+      if (hasErst && !v("last_done_datum") && (n("last_done_km") === "" || n("last_done_km") == null) && !(e && (this._wartData().punkte.find((x) => x.id === id)?.last_done))) return err("Ab wann zählt das erste Intervall? Trag unter „Letzter Service“ die Erstzulassung ein (Datum und 0 km).");
       if (e) {
         svc = "edit_maintenance"; data = { wartung_id: id, aktiv: !!f.elements.aktiv?.checked };
         if (name) data.name = name;
