@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=36`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=37`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -184,6 +184,7 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
+| 3.5.12 | Lademanagement: Auto + Modus-Auswahl, „Laden ab PV-Anteil“ einstellbar (ev_assistant ab 0.99.57); evcc-Zeile und Überschrift entfernt |
 | 3.5.11 | Laden: Ladeende aus evcc oben beim Laden; Lademanagement ohne „Aus“ |
 | 3.5.10 | Laden-Kachel: Ø Leistung in der Zeile statt als Kachel, SoC-Kachel entfernt |
 | 3.5.9  | Ladungen: Ø Ladeleistung und Start-/End-SoC bei der letzten Ladung und in „Alle Ladungen“ |
