@@ -663,11 +663,11 @@ class MgCarDashboard extends HTMLElement {
       : `<div class="tgt"><button class="tb" data-act="mplansoc" data-d="-5">−</button><span class="tv">${soc}<small> %</small></span><button class="tb" data-act="mplansoc" data-d="5">+</button></div>`;
     const usw = kmOk ? `<span class="hsegs mpu"><button class="hseg ${unit === "soc" ? "sel" : ""}" data-act="planunit" data-v="soc" title="Ziel-SoC direkt an evcc">%</button><button class="hseg ${unit === "km" ? "sel" : ""}" data-act="planunit" data-v="km" title="Ziel-Reichweite – ev_assistant rechnet in SoC um">km</button></span>` : "";
     const planForm = `<div class="mplan">
-      <div class="mphd"><span class="mpl">Ladeplan · Ziel${usw}</span>
+      <div class="mphd"><span class="mpl"><span><i class="mplw">Ladeplan · </i>Ziel</span>${usw}${kmHint}</span>
         <span class="mpb"><button class="qbtn" data-act="mplanset"${entry && !this._planReq?.busy ? "" : " disabled"}>${icon(this._planReq?.busy ? "mdi:timer-sand" : "mdi:check")}${this._planReq?.busy ? "Wird gesetzt …" : pi ? "Ändern" : "Plan setzen"}</button>
         ${pi ? `<button class="qbtn ghost" data-act="mplanclear" title="Ladeplan löschen" aria-label="Ladeplan löschen">${icon("mdi:delete-outline")}</button>` : ""}</span>
       </div>
-      <div class="mpf"><span class="mpt">${tgt}${kmHint}</span><label class="mpd"><span>bis</span><input class="pin" type="datetime-local" value="${esc(val)}" data-act="none"></label></div>
+      <div class="mpf"><span class="mpt">${tgt}</span><label class="mpd"><input class="pin" type="datetime-local" value="${esc(val)}" data-act="none" aria-label="Zielzeit" title="Zielzeit"></label></div>
       ${this._planReq?.err ? `<div class="mpe err">${icon("mdi:alert-circle-outline")}${esc(this._planReq.err)}</div>` : this._planReq?.info ? `<div class="mpe">${icon("mdi:information-outline")}${esc(this._planReq.info)}</div>` : ""}</div>`;
 
     const rec = this._st(E.charge_before_pv_recommended);
@@ -3045,11 +3045,13 @@ const CAR_STYLE = `
 .mmh .glyph{font-size:14px;font-weight:800;letter-spacing:-.02em;min-width:20px;text-align:center}
 .mmh .msub{font-size:12px;font-weight:600;opacity:.75;white-space:nowrap}
 .mmh b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mphd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.mphd .mpb{margin-left:auto}
+.mphd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.mplw{font-style:normal}
+@container (max-width:460px){.mplw{display:none}}.mphd .mpb{margin-left:auto}
 .mphd .mpl{font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.mpd{flex-direction:row!important;align-items:center;gap:8px!important}
+.mpd{flex:1 1 0;min-width:0;flex-direction:row!important;align-items:center}.mpd .pin{width:100%;min-width:0;box-sizing:border-box}
+.mplan .mpf{flex-wrap:nowrap;align-items:center}.mplan .mpt{flex:none}
 .mpl{display:flex;align-items:center;gap:8px;min-height:24px}.mpu{display:inline-flex;margin:0;padding:2px}.mpu .hseg{padding:2px 10px;font-size:12px;min-height:0;letter-spacing:0}
-.mpt{display:flex;align-items:center;gap:8px}.mpk{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.mpt{display:flex;align-items:center;gap:8px}.mpk{font-size:12.5px;color:var(--muted);white-space:nowrap;letter-spacing:0;text-transform:none;font-weight:500}
 .mpvmin{position:relative}.mpvmin select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
 .mpvmin:focus-within{border-color:rgba(255,255,255,.3)}
 .mmode.vorgabe{flex:none;min-width:0}

@@ -184,7 +184,7 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
-| 3.5.18 | Ladeplan: „Plan setzen“ oben neben der Überschrift |
+| 3.5.18 | Ladeplan: „Plan setzen“ oben neben der Überschrift, Ziel und Zielzeit in einer Zeile |
 | 3.5.17 | Ladeplan: Ziel wahlweise in % (direkt an evcc) oder km (über ev_assistant) |
 | 3.5.16 | Wartung: verständliche Hinweise zum Erstintervall; Kachel nennt den Grund, wenn keine Fälligkeit berechenbar ist |
 | 3.5.15 | Wartung: Countdown bis zum nächsten Termin, Farben gelb/orange/rot, erledigte grün, abweichendes Erstintervall |
