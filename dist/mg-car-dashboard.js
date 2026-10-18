@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=43  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=44  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.18";
+const VERSION = "3.5.19";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -562,7 +562,7 @@ class MgCarDashboard extends HTMLElement {
     })();
 
     // ev_assistant: Ladeplan, Vollladung, Pause
-    const plan = this._st(E.evcc_charge_plan), pa = plan?.attributes || {}, mc = this._st(E.evcc_mode_control), ma = mc?.attributes || {};
+    const plan = this._planSt(), pa = plan?.attributes || {}, mc = this._st(E.evcc_mode_control), ma = mc?.attributes || {};
     const pi = this._planInfo(plan), hasPlan = !!pi;
     const fmtD = (d) => `${WD[d.getDay()]} ${d.getDate()}. ${MON[d.getMonth()]}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     const entry = this._evaEntryId();
@@ -622,7 +622,7 @@ class MgCarDashboard extends HTMLElement {
     const mInfo = evM === "now" ? { t: "Schnell", i: icon(EVA_NOW.icon), c: EVA_NOW.color }
       : evM === "off" ? { t: "Aus", i: icon("mdi:power-off"), c: "#8b91a1" }
       : so ? { t: `Smart · ${so.label === "aus" ? "PV" : so.label}`, i: so.glyph ? "" : ico(so), c: EVA_SMART.color } : { t: "–", i: icon("mdi:help"), c: "var(--muted)" };
-    const plan = this._st(E.evcc_charge_plan), pi = this._planInfo(plan);
+    const plan = this._planSt(), pi = this._planInfo(plan);
     // Kopf: aktueller evcc-Lademodus oben rechts
     const head = `<div class="hd"><span class="ttl">Lademanagement</span>
       <span class="lbl mnow" style="--cc:${mInfo.c}" title="Lademodus in evcc">${mInfo.i}${esc(mInfo.t)}</span></div>`;
@@ -711,6 +711,12 @@ class MgCarDashboard extends HTMLElement {
     this._render_mgmt(); if (this._subPage() === "prof") this._render_misch();
   }
 
+  /* Ladeplan-Sensor ohne Überbrückung: „unbekannt“ heißt hier „kein Plan“ (z. B. direkt nach dem Löschen) */
+  _planSt() {
+    const id = this._eva().evcc_charge_plan, s = id ? this._hass?.states[id] : null, c = this._planCleared;
+    if (c && (Date.now() - c.t > 60000 || (s && s.state !== c.was))) this._planCleared = null;
+    return this._planCleared ? undefined : s || undefined;
+  }
   _planUnitGet() {
     if (this._planUnit) return this._planUnit;
     let v = null; try { v = localStorage.getItem("mg-car-plan-unit"); } catch (x) {}
@@ -950,7 +956,7 @@ class MgCarDashboard extends HTMLElement {
     ].join("");
 
     // Plan, Modus, Hinweise als schmale Zeilen
-    const plan = this._st(E.evcc_charge_plan), mode = this._st(E.evcc_mode_control), rec = this._st(E.charge_before_pv_recommended), tot = this._fmt(ev.solar_total, 0);
+    const plan = this._planSt(), mode = this._st(E.evcc_mode_control), rec = this._st(E.charge_before_pv_recommended), tot = this._fmt(ev.solar_total, 0);
     const row = (ic, lbl, v, id, cls = "") => `<button class="lrow ${cls}" data-act="more" data-entity="${esc(id)}">${icon(ic)}<span>${lbl}</span><b>${esc(v)}</b></button>`;
     const rows = [
       plan && !OFFLINE_HD.includes(plan.state) ? row("mdi:calendar-clock", "Ladeplan", plan.state, E.evcc_charge_plan) : "",
@@ -2788,7 +2794,14 @@ class MgCarDashboard extends HTMLElement {
       this._render_mgmt(); setTimeout(() => this._render_mgmt(), 30500);
       return;
     }
-    if (act === "mplanclear") { if (window.confirm("Ladeplan löschen?")) this._evaCall("clear_evcc_charge_plan", {}).catch((x) => window.alert(`Ladeplan konnte nicht gelöscht werden: ${x?.message || x}`)); return; }
+    if (act === "mplanclear") {
+      if (!window.confirm("Ladeplan löschen?")) return;
+      // sofort als gelöscht anzeigen, bis ev_assistant das bestätigt (oder nach 60 s wieder den echten Stand)
+      this._planCleared = { t: Date.now(), was: this._hass?.states[this._eva().evcc_charge_plan]?.state };
+      this._planTime = null; this._render_mgmt(); this._render_live();
+      this._evaCall("clear_evcc_charge_plan", {}).catch((x) => { this._planCleared = null; this._render_mgmt(); this._render_live(); window.alert(`Ladeplan konnte nicht gelöscht werden: ${x?.message || x}`); });
+      return;
+    }
     if (act === "planunit") { this._planUnit = el.dataset.v; try { localStorage.setItem("mg-car-plan-unit", this._planUnit); } catch (x) {} this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
     if (act === "mplankm") { const kp = this._kmPerPct(), base = this._planKm ?? (kp ? Math.round(((this._planSoc ?? 80) * kp) / 10) * 10 : 200); this._planKm = Math.max(10, Math.min(1000, base + Number(el.dataset.d))); this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
     if (act === "mplansoc") { this._planSoc = Math.max(10, Math.min(100, (this._planSoc ?? 80) + Number(el.dataset.d))); this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
