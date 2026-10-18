@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=43`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=45`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -88,6 +88,18 @@ Die Unterseite zeigt die Daten aus den ev_assistant-Reitern „Nutzungsprofil“
 | Netz-Zuschuss | Skala von Einspeisevergütung bis Netzpreis mit Schwelle und aktuellem Mischpreis (Tarife aus evcc) |
 
 Fehlende Werte blendet die Karte aus bzw. zeigt „–“ (z. B. ohne Hauszähler oder Außentemperatur in ev_assistant).
+
+### Unterseite „Laden & Kosten“
+
+Zeitraum oben rechts wie im Energiedashboard: **Tag · Woche · Monat · Jahr · Gesamt**, mit ‹ › zum Blättern.
+Alle Werte rechnet die Karte aus den Heimladungen (evcc-Ladelogbuch), den Fremdladungen und dem Fahrtenbuch von ev_assistant.
+
+| Bereich | Inhalt |
+|---|---|
+| Geladen | kWh je Stunde/Tag/Monat, gestapelt nach Heim PV, Heim Netz, Fremd AC, Fremd DC; Energie, Kosten (mit Vergleich zum Vorzeitraum), Ø Preis, Strecke, Verbrauch, €/100 km |
+| Ladungen im Zeitraum | die letzten Ladungen; Fremdladungen antippen zum Bearbeiten |
+| Aufschlüsselung | kWh, € und ct/kWh je Quelle plus anteilige Ladekarten-Grundgebühren (Heim-PV mit der Einspeisevergütung bewertet) |
+| Vergleich Verbrenner | gespart im Zeitraum und seit Einrichtung, Elektro vs. Verbrenner, €/100 km, Liter, CO₂ – Verbrennerkosten je km aus dem ev_assistant-Vergleich seit Einrichtung |
 
 ### Unterseite „Einstellungen“
 
@@ -184,6 +196,8 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
+| 3.6.0  | Neue Unterseite „Laden & Kosten“: Ladeaufschlüsselung nach Zeitraum, Verbrenner-Vergleich |
+| 3.5.19 | Ladeplan: Löschen wird sofort angezeigt |
 | 3.5.18 | Ladeplan: „Plan setzen“ oben neben der Überschrift |
 | 3.5.17 | Ladeplan: Ziel wahlweise in % (direkt an evcc) oder km (über ev_assistant) |
 | 3.5.16 | Wartung: verständliche Hinweise zum Erstintervall; Kachel nennt den Grund, wenn keine Fälligkeit berechenbar ist |
