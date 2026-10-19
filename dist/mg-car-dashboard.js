@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=52  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=53  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.6.7";
+const VERSION = "3.6.8";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -717,7 +717,7 @@ class MgCarDashboard extends HTMLElement {
     const { v } = this._pvMinCur(ma), rv = v == null ? null : Math.round(v / 5) * 5;
     let opts = `<option value=""${v == null ? " selected" : ""}>aus</option>`;
     for (let x = 0; x <= 100; x += 5) opts += `<option value="${x}"${rv === x ? " selected" : ""}>${x} %</option>`;
-    return `<button class="mbtn lim" data-act="pvminmenu" title="Netzstrom nur dazunehmen, wenn mindestens dieser Anteil aus PV kommt">
+    return `<button class="mbtn mpvmin${v != null ? " on" : ""}" data-act="pvminmenu" title="Netzstrom nur dazunehmen, wenn mindestens dieser Anteil aus PV kommt">
       ${icon("mdi:solar-power-variant")}<div class="mtx"><b>${v == null ? "aus" : `ab ${de(v, 0)} %`}</b><span>PV-Anteil</span></div>${icon("mdi:chevron-down", "mchv")}</button>`;
   }
   /* Puffer für den Bedarf morgen (ev_assistant: set_usage_profile_buffer_km, 0–300 km) */
@@ -731,7 +731,7 @@ class MgCarDashboard extends HTMLElement {
     const B = this._bufInfo();
     let opts = B.cur == null ? `<option value="" selected>${isNaN(B.pct) ? "–" : `${de(B.pct, 0)} %`}</option>` : "";
     for (let v = 0; v <= 300; v += 5) opts += `<option value="${v}"${B.cur != null && Math.round(B.cur / 5) * 5 === v ? " selected" : ""}>${v} km</option>`;
-    return `<button class="mbtn lim" data-act="bufmenu" title="Sicherheitspuffer auf den Bedarf für morgen">
+    return `<button class="mbtn mbuf" data-act="bufmenu" title="Sicherheitspuffer auf den Bedarf für morgen">
       ${icon("mdi:shield-car")}<div class="mtx"><b>${B.cur != null ? `${de(B.cur, 0)} km` : isNaN(B.pct) ? "–" : `${de(B.pct, 0)} %`}</b><span>Puffer</span></div>${icon("mdi:chevron-down", "mchv")}</button>`;
   }
   _setBuffer(v) {
@@ -3508,7 +3508,8 @@ const CAR_STYLE = `
 .mbtn .glyph{font-size:13px;font-weight:800;min-width:18px;text-align:center;color:var(--muted)}
 .mbtn.mdrop{position:relative}.mbtn.mdrop select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}.mbtn.mdrop:focus-within{border-color:rgba(255,255,255,.3)}
 .mbtn.mpvmin.on b,.mbtn.mpvmin.on > ha-icon:first-child{color:var(--e-solar,#ff9800)}.mbtn.mpvmin.on{border-color:rgba(255,152,0,.35)}
-.mbtn.mbuf b,.mbtn.mbuf > ha-icon:first-child{color:var(--violet,#a78bfa)}
+.mbtn.mpvmin b,.mbtn.mpvmin > ha-icon:first-child{color:var(--e-solar,#ff9800)}
+.mbtn.mbuf b,.mbtn.mbuf > ha-icon:first-child{color:var(--green)}
 .mph3{display:grid!important;grid-template-columns:1fr auto 1fr}.mph3 .mpr{justify-self:end}.mph3 .mpc{justify-self:center}
 .mbtn.pause.on ha-icon,.mbtn.pause.on b{color:var(--orange)}
 .mbtn.tnow b{color:var(--text)}
