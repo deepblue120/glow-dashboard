@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=49  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=50  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.6.4";
+const VERSION = "3.6.5";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -1896,8 +1896,8 @@ class MgCarDashboard extends HTMLElement {
     }).join("");
     const kl = sr.getElementById("klist"), oldBox = kl.querySelector(".klist"), keepTop = oldBox && this._kKeyShown === kKey ? oldBox.scrollTop : 0;
     const sb = (k, l) => `<button class="hseg ${so.k === k ? "sel" : ""}" data-act="ksort" data-v="${k}" title="${so.k === k ? (so.d < 0 ? "absteigend – erneut tippen für aufsteigend" : "aufsteigend – erneut tippen für absteigend") : `nach ${l} sortieren`}">${l}${so.k === k ? `<i class="kdir">${so.d < 0 ? "↓" : "↑"}</i>` : ""}</button>`;
-    kl.innerHTML = this._hd("Ladungen im Zeitraum", `${S.n} Ladung${S.n === 1 ? "" : "en"}`)
-      + (S.n > 1 ? `<div class="ksort"><span>Sortieren</span><div class="hsegs">${sb("ts", "Datum")}${sb("kwh", "Menge")}${sb("cost", "Kosten")}</div></div>` : "")
+    // Kopfzeile: links Überschrift, mittig Sortierung, rechts Anzahl
+    kl.innerHTML = `<div class="hd khd"><span class="ttl">Ladungen im Zeitraum</span>${S.n > 1 ? `<div class="hsegs ksort">${sb("ts", "Datum")}${sb("kwh", "Menge")}${sb("cost", "Kosten")}</div>` : "<span></span>"}<span class="lbl">${S.n} Ladung${S.n === 1 ? "" : "en"}</span></div>`
       + (rows ? `<div class="klist">${rows}${this._kMore ? `<div class="kmore">${shown} von ${all.length} – weiter scrollen</div>` : ""}</div>` : `<div class="empty">${loading ? "Lädt …" : "Keine Ladungen in diesem Zeitraum."}</div>`);
     this._kKeyShown = kKey;
     const box = kl.querySelector(".klist");
@@ -3743,8 +3743,9 @@ const CAR_STYLE = `
 .kkp span{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap}
 .kkp b{font-size:19px;font-variant-numeric:tabular-nums}.kkp small{font-size:11.5px;color:var(--muted);margin-left:3px}.kkp em{display:block;font-style:normal;font-size:11.5px;color:var(--green);white-space:nowrap}.kkp em.up{color:var(--orange)}
 .klist{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;padding-right:4px;margin-right:-4px}
-.ksort{display:flex;align-items:center;gap:10px;margin:-4px 0 10px}.ksort > span{font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.ksort .hseg{padding:0 12px;font-size:13px}.kdir{font-style:normal;margin-left:4px;font-weight:700}
+.khd{display:grid;grid-template-columns:1fr auto 1fr;align-items:center}.khd .ttl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.khd .lbl{justify-self:end}.khd .ksort{justify-self:center;margin-left:0}
+.ksort .hseg{padding:0 12px;font-size:13px}
+@container (max-width:560px){.khd{grid-template-columns:1fr auto}.khd .ksort{grid-column:1 / -1;grid-row:2;justify-self:stretch;margin-left:0;width:100%}.khd .ksort .hseg{flex:1}}.kdir{font-style:normal;margin-left:4px;font-weight:700}
 .kmore{text-align:center;font-size:12.5px;color:var(--dim);padding:6px 0}.krow:not(.ted){cursor:default}.krow:not(.ted):hover{border-color:var(--tileb)}
 .krow{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:8px 12px 8px 8px;border-radius:14px;background:var(--tile);border:1px solid var(--tileb);cursor:pointer}.krow:hover{border-color:rgba(255,255,255,.2)}
 .kri{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--e-solar,#ff9800) 16%,transparent);color:var(--e-solar,#ff9800)}.kri.ext{background:rgba(244,114,182,.14);color:#f472b6}.kri ha-icon{--mdc-icon-size:18px}
