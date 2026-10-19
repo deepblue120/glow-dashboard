@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=45`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=46`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -196,6 +196,7 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
+| 3.6.1  | Ladeplan überarbeitet (Auswahl für Ziel-% / Ziel-km, aktiver Plan wird angezeigt), Seiten-Tabs mittig |
 | 3.6.0  | Neue Unterseite „Laden & Kosten“: Ladeaufschlüsselung nach Zeitraum, Verbrenner-Vergleich |
 | 3.5.19 | Ladeplan: Löschen wird sofort angezeigt |
 | 3.5.18 | Ladeplan: „Plan setzen“ oben neben der Überschrift |

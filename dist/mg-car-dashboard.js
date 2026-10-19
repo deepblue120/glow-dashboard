@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=45  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=46  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.6.0";
+const VERSION = "3.6.1";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -243,6 +243,7 @@ class MgCarDashboard extends HTMLElement {
         else if (e.type === "change" && c.contains("srestfile")) { const f = t.files?.[0]; t.value = ""; this._readRestore(f); }
         else if (e.type === "change" && c.contains("fpreset")) this._wtPreset(t.value, true);
         else if (e.type === "change" && c.contains("pvminsel")) { t.blur(); this._setPvMin(t.value); }
+        else if (e.type === "change" && c.contains("mptgt")) { if (t.dataset.u === "km") this._planKm = Number(t.value); else this._planSoc = Number(t.value); this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; t.blur(); this._render_mgmt(); }
         else if (e.type === "change" && c.contains("slogkat")) { this._logKat = t.value; this._renderLogList(); }
         else if (e.type === "input" && c.contains("slogq")) { this._logQ = t.value; this._renderLogList(); }
       };
@@ -507,7 +508,7 @@ class MgCarDashboard extends HTMLElement {
   /* --- Lademanagement: Vorgabe, evcc-Modus (inkl. Immer laden), Ladestrom, Mindestladung, Ladeplan + Vollladung (ev_assistant) --- */
   _render_mgmt() {
     const el = this.shadowRoot.getElementById("mgmt"); if (!el) return;
-    if (/\b(pin|pvminsel)\b/.test(this.shadowRoot.activeElement?.className || "")) return;   // während der Eingabe nicht neu zeichnen
+    if (/\b(pin|pvminsel|mptgt)\b/.test(this.shadowRoot.activeElement?.className || "")) return;   // während der Eingabe nicht neu zeichnen
     const c = this._config.car, ev = c.evcc || {}, E = this._eva();
     const step = (lbl, ic, cfgId, unit) => {
       const id = this._real(cfgId), st = this._st(id); if (!st) return "";   // nur eine echte Entität lässt sich einstellen
@@ -653,28 +654,42 @@ class MgCarDashboard extends HTMLElement {
     const r = this._renderLimitRow(this._config.car, this._config.car.evcc || {}, E, ma, mc);
     const ctl = `<div class="mbottom m3">${r.lim}${r.bal}${r.pause}</div>`;
 
-    // --- ev_assistant: Ladeplan setzen (der aktuelle Plan steht oben bei evcc) ---
+    // --- ev_assistant: Ladeplan – aktiver Plan oder Formular (Ziel als SoC oder km, Zielzeit) ---
     const pr = this._planReq;
-    if (pi?.date && pr?.target && Math.abs(pi.date.getTime() - pr.target) < 90000) { clearTimeout(pr.timer); this._planReq = null; }
+    if (pi?.date && pr?.target && Math.abs(pi.date.getTime() - pr.target) < 90000) { clearTimeout(pr.timer); this._planReq = null; this._planEdit = false; }
     const def = new Date(); def.setDate(def.getDate() + 1); def.setHours(7, 0, 0, 0);
     const dv = pi?.date && !isNaN(pi.date) ? pi.date : def;
     const val = this._planTime || `${dv.getFullYear()}-${pad(dv.getMonth() + 1)}-${pad(dv.getDate())}T${pad(dv.getHours())}:${pad(dv.getMinutes())}`;
-    const soc = this._planSoc ?? (pi?.soc != null ? Math.round(pi.soc) : 80);
+    const soc = this._planSoc ?? (pi?.soc != null ? Math.round(pi.soc / 5) * 5 : 80);
     // Ziel wahlweise als SoC (direkt an evcc) oder als Reichweite in km (ev_assistant rechnet mit dem Verbrauch in SoC um)
     const kmOk = !!this._hass?.services?.ev_assistant?.set_evcc_charge_plan_range_km, unit = kmOk ? this._planUnitGet() : "soc";
     const kmPerPct = this._kmPerPct(), km = this._planKm ?? (kmPerPct ? Math.round((soc * kmPerPct) / 10) * 10 : 200);
-    const kmHint = unit === "km" && kmPerPct ? `<small class="mpk">≈ ${Math.min(100, Math.round(km / kmPerPct))} %</small>` : "";
-    const tgt = unit === "km"
-      ? `<div class="tgt"><button class="tb" data-act="mplankm" data-d="-10">−</button><span class="tv">${km}<small> km</small></span><button class="tb" data-act="mplankm" data-d="10">+</button></div>`
-      : `<div class="tgt"><button class="tb" data-act="mplansoc" data-d="-5">−</button><span class="tv">${soc}<small> %</small></span><button class="tb" data-act="mplansoc" data-d="5">+</button></div>`;
-    const usw = kmOk ? `<span class="hsegs mpu"><button class="hseg ${unit === "soc" ? "sel" : ""}" data-act="planunit" data-v="soc" title="Ziel-SoC direkt an evcc">%</button><button class="hseg ${unit === "km" ? "sel" : ""}" data-act="planunit" data-v="km" title="Ziel-Reichweite – ev_assistant rechnet in SoC um">km</button></span>` : "";
-    const planForm = `<div class="mplan">
-      <div class="mphd"><span class="mpl">Ladeplan · Ziel${usw}</span>
-        <span class="mpb"><button class="qbtn" data-act="mplanset"${entry && !this._planReq?.busy ? "" : " disabled"}>${icon(this._planReq?.busy ? "mdi:timer-sand" : "mdi:check")}${this._planReq?.busy ? "Wird gesetzt …" : pi ? "Ändern" : "Plan setzen"}</button>
-        ${pi ? `<button class="qbtn ghost" data-act="mplanclear" title="Ladeplan löschen" aria-label="Ladeplan löschen">${icon("mdi:delete-outline")}</button>` : ""}</span>
-      </div>
-      <div class="mpf"><span class="mpt">${tgt}${kmHint}</span><label class="mpd"><span>bis</span><input class="pin" type="datetime-local" value="${esc(val)}" data-act="none"></label></div>
-      ${this._planReq?.err ? `<div class="mpe err">${icon("mdi:alert-circle-outline")}${esc(this._planReq.err)}</div>` : this._planReq?.info ? `<div class="mpe">${icon("mdi:information-outline")}${esc(this._planReq.info)}</div>` : ""}</div>`;
+    const reqMsg = pr?.err ? `<div class="mpe err">${icon("mdi:alert-circle-outline")}${esc(pr.err)}</div>` : pr?.info ? `<div class="mpe">${icon("mdi:information-outline")}${esc(pr.info)}</div>` : "";
+    let planBox;
+    if (pi && !this._planEdit && !pr?.busy) {
+      const pa = plan?.attributes || {}, ps = pa.projected_start ? new Date(pa.projected_start) : null, pe = pa.projected_end ? new Date(pa.projected_end) : null;
+      const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      const when = pi.date ? `${pi.date.toDateString() === new Date().toDateString() ? "heute" : pi.date.toDateString() === new Date(Date.now() + 86400000).toDateString() ? "morgen" : `${WD[pi.date.getDay()]} ${pi.date.getDate()}.${pi.date.getMonth() + 1}.`} ${hm(pi.date)} Uhr` : esc(plan.state);
+      const kmT = pi.soc != null && kmPerPct ? ` · ≈ ${de(Math.round((pi.soc * kmPerPct) / 10) * 10, 0)} km` : "";
+      planBox = `<div class="mplan act"><div class="mpa">${icon("mdi:calendar-clock")}
+          <span class="mpat"><small>Ladeplan${pa.aktiv ? ` <em class="mrun">läuft</em>` : ""}</small><b>${pi.soc != null ? `${Math.round(pi.soc)} %` : "Ziel"} bis ${when}</b>
+            <small>${ps && !isNaN(ps) ? `Laden ${hm(ps)}${pe && !isNaN(pe) ? `–${hm(pe)}` : ""} Uhr` : ""}${kmT}</small></span>
+          <span class="mpb"><button class="qbtn ghost" data-act="mplanedit">${icon("mdi:pencil")}Ändern</button><button class="qbtn ghost" data-act="mplanclear" title="Ladeplan löschen" aria-label="Ladeplan löschen">${icon("mdi:delete-outline")}</button></span></div>
+        ${pa.erwartung ? `<div class="mpe">${icon("mdi:information-outline")}${esc(pa.erwartung)}</div>` : ""}${reqMsg}</div>`;
+    } else {
+      let opts = "";
+      if (unit === "km") {
+        const max = kmPerPct ? Math.max(100, Math.ceil((kmPerPct * 100) / 10) * 10) : 600, sel = Math.min(max, Math.round(km / 10) * 10);
+        for (let v = 10; v <= max; v += 10) opts += `<option value="${v}"${v === sel ? " selected" : ""}>${v} km${kmPerPct ? ` (≈ ${Math.min(100, Math.round(v / kmPerPct))} %)` : ""}</option>`;
+      } else for (let v = 10; v <= 100; v += 5) opts += `<option value="${v}"${v === soc ? " selected" : ""}>${v} %${kmPerPct ? ` (≈ ${de(Math.round((v * kmPerPct) / 10) * 10, 0)} km)` : ""}</option>`;
+      const usw = kmOk ? `<span class="hsegs mpu"><button class="hseg ${unit === "soc" ? "sel" : ""}" data-act="planunit" data-v="soc" title="Ziel-SoC direkt an evcc">%</button><button class="hseg ${unit === "km" ? "sel" : ""}" data-act="planunit" data-v="km" title="Ziel-Reichweite – ev_assistant rechnet in SoC um">km</button></span>` : "";
+      planBox = `<div class="mplan"><div class="mphd"><span class="mpl">${icon("mdi:calendar-plus")}${pi ? "Ladeplan ändern" : "Ladeplan"}</span>${usw}</div>
+        <div class="mpg"><label><span>Ziel</span><select class="msel mptgt" data-u="${unit}" aria-label="Ziel">${opts}</select></label>
+          <label><span>Bis</span><input class="pin" type="datetime-local" value="${esc(val)}" data-act="none" aria-label="Zielzeit"></label></div>
+        <div class="mpb end">${pi ? `<button class="qbtn ghost" data-act="mplancancel">Abbrechen</button>` : ""}<button class="qbtn" data-act="mplanset"${entry && !pr?.busy ? "" : " disabled"}>${icon(pr?.busy ? "mdi:timer-sand" : "mdi:check")}${pr?.busy ? "Wird gesetzt …" : "Plan setzen"}</button></div>
+        ${reqMsg}</div>`;
+    }
+    const planForm = planBox;
 
     const rec = this._st(E.charge_before_pv_recommended);
     const err = this._mgmtErr ? `<div class="mpe err merr">${icon("mdi:alert-circle-outline")}<span>ev_assistant: ${esc(this._mgmtErr.msg)}</span></div>` : "";
@@ -2965,6 +2980,8 @@ class MgCarDashboard extends HTMLElement {
       this._evaCall("clear_evcc_charge_plan", {}).catch((x) => { this._planCleared = null; this._render_mgmt(); this._render_live(); window.alert(`Ladeplan konnte nicht gelöscht werden: ${x?.message || x}`); });
       return;
     }
+    if (act === "mplanedit") { this._planEdit = true; this._planSoc = this._planKm = null; this._planTime = null; this._render_mgmt(); return; }
+    if (act === "mplancancel") { this._planEdit = false; this._planReq = null; this._render_mgmt(); return; }
     if (act === "planunit") { this._planUnit = el.dataset.v; try { localStorage.setItem("mg-car-plan-unit", this._planUnit); } catch (x) {} this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
     if (act === "mplankm") { const kp = this._kmPerPct(), base = this._planKm ?? (kp ? Math.round(((this._planSoc ?? 80) * kp) / 10) * 10 : 200); this._planKm = Math.max(10, Math.min(1000, base + Number(el.dataset.d))); this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
     if (act === "mplansoc") { this._planSoc = Math.max(10, Math.min(100, (this._planSoc ?? 80) + Number(el.dataset.d))); this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; this._render_mgmt(); return; }
@@ -2977,10 +2994,12 @@ class MgCarDashboard extends HTMLElement {
       const req = (this._planReq = { busy: true, err: "", info: "", sent: false, target: t });
       const done = (key, msg) => { if (this._planReq !== req) return; clearTimeout(req.timer); req.busy = false; req[key] = msg; this._planTime = v; this._render_mgmt(); };
       req.timer = setTimeout(() => (req.sent ? done("info", this._planSentText()) : done("err", "Keine Antwort von ev_assistant – Ladeplan vermutlich nicht gesetzt.")), 12000);
-      const byKm = this._hass?.services?.ev_assistant?.set_evcc_charge_plan_range_km && this._planUnitGet() === "km";
-      const kp = this._kmPerPct(), kmV = this._planKm ?? (kp ? Math.round(((this._planSoc ?? 80) * kp) / 10) * 10 : 200);
-      (byKm ? this._evaCall("set_evcc_charge_plan_range_km", { target_range_km: kmV, target_time: Math.round(t / 1000) })
-        : this._evaCall("set_evcc_charge_plan", { target_soc: this._planSoc ?? 80, target_time: Math.round(t / 1000) }))
+      // Ziel direkt aus der Auswahl lesen (zeigt immer den Wert, der auch gesendet wird)
+      const sel = this.shadowRoot.querySelector("#mgmt .mptgt"), sv = Number(sel?.value);
+      const byKm = sel?.dataset.u === "km" && !!this._hass?.services?.ev_assistant?.set_evcc_charge_plan_range_km;
+      if (byKm) this._planKm = sv; else if (sv) this._planSoc = sv;
+      (byKm ? this._evaCall("set_evcc_charge_plan_range_km", { target_range_km: sv, target_time: Math.round(t / 1000) })
+        : this._evaCall("set_evcc_charge_plan", { target_soc: sv || 80, target_time: Math.round(t / 1000) }))
         .then(() => { req.sent = true; })
         .catch((x) => done("err", `Ladeplan konnte nicht gesetzt werden: ${x?.message || x?.error?.message || x}`));
       this._planTime = v; this._render_mgmt(); return;
@@ -3221,7 +3240,17 @@ const CAR_STYLE = `
 .mmh .glyph{font-size:14px;font-weight:800;letter-spacing:-.02em;min-width:20px;text-align:center}
 .mmh .msub{font-size:12px;font-weight:600;opacity:.75;white-space:nowrap}
 .mmh b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mphd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.mphd .mpb{margin-left:auto}
+.mphd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between}.mphd .mpl ha-icon{--mdc-icon-size:18px;color:var(--cyan)}
+.mpg{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:10px}
+.mpg label{display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);min-width:0}
+.mpg .pin,.msel{width:100%;min-width:0;box-sizing:border-box;height:38px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--text);padding:0 10px;font:inherit;font-size:14px;font-weight:600;color-scheme:dark;letter-spacing:0;text-transform:none}
+.msel option{color:#111;background:#fff;font-weight:500}
+.mpb.end{justify-content:flex-end}
+.mpa{display:flex;align-items:center;gap:12px}.mpa > ha-icon{--mdc-icon-size:24px;color:var(--cyan);flex:none}
+.mpat{display:flex;flex-direction:column;min-width:0;flex:1}.mpat b{font-size:16px}.mpat small{font-size:12.5px;color:var(--muted)}
+.mpat small:first-child{font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.mrun{font-style:normal;margin-left:6px;padding:1px 7px;border-radius:7px;background:rgba(52,211,153,.14);color:var(--green);letter-spacing:.04em}
+@container (max-width:420px){.mpg{grid-template-columns:1fr}.mpa{flex-wrap:wrap}.mpa .mpb{width:100%;justify-content:flex-end}}.mphd .mpb{margin-left:auto}
 .mphd .mpl{font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .mpd{flex-direction:row!important;align-items:center;gap:8px!important}
 .mpl{display:flex;align-items:center;gap:8px;min-height:24px}.mpu{display:inline-flex;margin:0;padding:2px}.mpu .hseg{padding:2px 10px;font-size:12px;min-height:0;letter-spacing:0}
@@ -3537,7 +3566,8 @@ const CAR_STYLE = `
 @container (max-width:1180px){.pgrid{grid-template-columns:1fr!important}.ptiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @container (max-width:720px){.pdays{grid-template-columns:repeat(4,minmax(0,1fr))}.pcols{grid-template-columns:1fr}}
 .sgrid{grid-template-columns:1.5fr 1fr!important;align-content:start}
-.pages{align-items:center;gap:10px;flex-wrap:wrap}.kper{display:flex;align-items:center;gap:10px;margin-left:auto;flex-wrap:wrap}
+.pages{display:grid!important;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px}.pages > .hsegs{grid-column:2}
+.kper{grid-column:3;justify-self:end;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .knav{display:flex;align-items:center;gap:4px}.knav b{min-width:120px;text-align:center;font-size:15px}.knav .sic[disabled]{opacity:.3;pointer-events:none}
 .kgrid{grid-template-columns:2fr 1fr!important;align-content:start}.wrap.fit .kgrid{grid-template-rows:none;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
 .kpv{background:var(--e-solar,#ff9800)}.kgr{background:var(--e-grid-in,#488fc2)}.kac{background:#a78bfa}.kdc{background:#f472b6}.kfee{background:#64748b}
@@ -3567,6 +3597,7 @@ const CAR_STYLE = `
 .kmini div{padding:8px 10px;border-radius:13px;background:var(--tile);border:1px solid var(--tileb);min-width:0}.kmini span{display:block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap}.kmini b{font-size:16px}.kmini small{font-size:11px;color:var(--muted);margin-left:3px}
 @container (max-width:1180px){.kgrid{grid-template-columns:1fr!important}.kkp{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @container (max-width:520px){.pages > .hsegs{width:100%;overflow-x:auto;scrollbar-width:none}.pages > .hsegs .hseg{flex:1 0 auto;padding:0 9px;font-size:12.5px}}
+@container (max-width:900px){.pages{grid-template-columns:1fr}.pages > .hsegs{grid-column:1;justify-self:center}.kper{grid-column:1;justify-self:stretch;justify-content:space-between}}
 @container (max-width:720px){.kper{width:100%;margin-left:0;justify-content:space-between}.knav b{min-width:0}.kchart{height:150px;gap:2px}.kax{gap:2px}}
 .cpend{display:inline-flex;align-items:center;gap:6px;flex:none;padding:7px 12px;border-radius:14px;background:rgba(249,115,22,.14);border:1px solid rgba(249,115,22,.45);color:var(--orange);font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
 .cpend ha-icon{--mdc-icon-size:17px}.cpend b{font-size:14px}.cpend:hover{background:rgba(249,115,22,.22)}
