@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=53`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=54`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -197,15 +197,16 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
-| 3.6.8  | Lademanagement: PV-Anteil wieder orange, Puffer grün |
-| 3.6.7  | Übersicht ohne Scrollbalken rechts, PV-Anteil/Puffer mit Auswahl wie Ladeziel, Laden & Kosten bündig |
-| 3.6.6  | Lademanagement: Automatik · Manuell · Vollladung / Ladeziel · PV-Anteil · Puffer, „Plan setzen“ mittig |
-| 3.6.5  | Laden & Kosten: Sortierung in der Kopfzeile der Ladungsliste |
-| 3.6.4  | Laden & Kosten: Ladungen nach Datum, Menge oder Kosten sortieren |
-| 3.6.3  | Laden & Kosten: alle Ladungen des Zeitraums in einer scrollbaren Liste (lädt beim Scrollen nach) |
-| 3.6.2  | Einstellungen: Urlaubsmodus, Fahrtenbuch als CSV exportieren und Fahrten importieren |
-| 3.6.1  | Ladeplan überarbeitet (Auswahl für Ziel-% / Ziel-km, aktiver Plan wird angezeigt), Seiten-Tabs mittig |
-| 3.6.0  | Neue Unterseite „Laden & Kosten“: Ladeaufschlüsselung nach Zeitraum, Verbrenner-Vergleich |
+| 3.5.28 | Auswahllisten einheitlich (Ladeplan-Ziel, Puffer und PV auf Profil & Analyse, Protokoll-Kategorie), Datumsfelder öffnen den Kalender |
+| 3.5.27 | Lademanagement: PV-Anteil wieder orange, Puffer grün |
+| 3.5.26 | Übersicht ohne Scrollbalken rechts, PV-Anteil/Puffer mit Auswahl wie Ladeziel, Laden & Kosten bündig |
+| 3.5.25 | Lademanagement: Automatik · Manuell · Vollladung / Ladeziel · PV-Anteil · Puffer, „Plan setzen“ mittig |
+| 3.5.24 | Laden & Kosten: Sortierung in der Kopfzeile der Ladungsliste |
+| 3.5.23 | Laden & Kosten: Ladungen nach Datum, Menge oder Kosten sortieren |
+| 3.5.22 | Laden & Kosten: alle Ladungen des Zeitraums in einer scrollbaren Liste (lädt beim Scrollen nach) |
+| 3.5.21 | Einstellungen: Urlaubsmodus, Fahrtenbuch als CSV exportieren und Fahrten importieren |
+| 3.5.20 | Ladeplan überarbeitet (Auswahl für Ziel-% / Ziel-km, aktiver Plan wird angezeigt), Seiten-Tabs mittig |
+| 3.5.19 | Neue Unterseite „Laden & Kosten“: Ladeaufschlüsselung nach Zeitraum, Verbrenner-Vergleich |
 | 3.5.19 | Ladeplan: Löschen wird sofort angezeigt |
 | 3.5.18 | Ladeplan: „Plan setzen“ oben neben der Überschrift |
 | 3.5.17 | Ladeplan: Ziel wahlweise in % (direkt an evcc) oder km (über ev_assistant) |
