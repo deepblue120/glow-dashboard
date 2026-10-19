@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=48  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=49  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.6.3";
+const VERSION = "3.6.4";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -1880,9 +1880,11 @@ class MgCarDashboard extends HTMLElement {
         ${kp("Strecke", de(S.km, 0), "km")}${kp("Verbrauch", cons != null ? de(cons, 1) : "–", "kWh/100")}${kp("€ / 100 km", per100 != null ? de(per100, 2) : "–", "€")}</div>`;
 
     // --- Ladungen im Zeitraum: alle des Zeitraums in einer scrollbaren Liste, weitere werden beim Scrollen nachgeladen ---
-    const kKey = `${cp.p}|${cp.off}`;
+    // Sortierung: Datum, kWh oder Kosten; erneutes Tippen dreht die Richtung um
+    const so = this._kSort || (this._kSort = { k: "ts", d: -1 }), kKey = `${cp.p}|${cp.off}|${so.k}|${so.d}`;
     if (this._kKey !== kKey) { this._kKey = kKey; this._kN = 30; }
-    const all = [...S.list].sort((x, y) => y.ts - x.ts), shown = Math.min(this._kN, all.length);
+    const val = (x) => (so.k === "kwh" ? x.kwh : so.k === "cost" ? x.cost : x.ts) ?? -Infinity;
+    const all = [...S.list].sort((x, y) => (val(x) - val(y)) * so.d || y.ts - x.ts), shown = Math.min(this._kN, all.length);
     this._kMore = shown < all.length;
     const rows = all.slice(0, shown).map((x) => {
       const d = new Date(x.ts), ed = x.type === "ext" && x.raw?.erfasst_ts != null;
@@ -1893,7 +1895,9 @@ class MgCarDashboard extends HTMLElement {
         <span class="krv"><b>${x.kwh != null ? de(x.kwh, 1) : "–"} kWh</b><small>${x.cost != null ? `${de(x.cost, 2)} €` : ""}</small></span></div>`;
     }).join("");
     const kl = sr.getElementById("klist"), oldBox = kl.querySelector(".klist"), keepTop = oldBox && this._kKeyShown === kKey ? oldBox.scrollTop : 0;
+    const sb = (k, l) => `<button class="hseg ${so.k === k ? "sel" : ""}" data-act="ksort" data-v="${k}" title="${so.k === k ? (so.d < 0 ? "absteigend – erneut tippen für aufsteigend" : "aufsteigend – erneut tippen für absteigend") : `nach ${l} sortieren`}">${l}${so.k === k ? `<i class="kdir">${so.d < 0 ? "↓" : "↑"}</i>` : ""}</button>`;
     kl.innerHTML = this._hd("Ladungen im Zeitraum", `${S.n} Ladung${S.n === 1 ? "" : "en"}`)
+      + (S.n > 1 ? `<div class="ksort"><span>Sortieren</span><div class="hsegs">${sb("ts", "Datum")}${sb("kwh", "Menge")}${sb("cost", "Kosten")}</div></div>` : "")
       + (rows ? `<div class="klist">${rows}${this._kMore ? `<div class="kmore">${shown} von ${all.length} – weiter scrollen</div>` : ""}</div>` : `<div class="empty">${loading ? "Lädt …" : "Keine Ladungen in diesem Zeitraum."}</div>`);
     this._kKeyShown = kKey;
     const box = kl.querySelector(".klist");
@@ -2955,6 +2959,7 @@ class MgCarDashboard extends HTMLElement {
     if (act === "trips") { this._openTrips(); return; }
     if (act === "pendopen") { this._openPend(); return; }
     if (act === "cper") { const cp = this._cpGet(); cp.p = el.dataset.v; cp.off = 0; try { localStorage.setItem("mg-car-cost-period", cp.p); } catch (x) {} this._render_cost(); return; }
+    if (act === "ksort") { const so = this._kSort || { k: "ts", d: -1 }, v = el.dataset.v; this._kSort = so.k === v ? { k: v, d: -so.d } : { k: v, d: -1 }; const b = this.shadowRoot.querySelector("#klist .klist"); if (b) b.scrollTop = 0; this._render_cost(); return; }
     if (act === "cnav") { const cp = this._cpGet(); cp.off = Math.min(0, cp.off + Number(el.dataset.d)); this._render_cost(); return; }
     if (act === "mset") {
       this._closeMenu();
@@ -3738,6 +3743,8 @@ const CAR_STYLE = `
 .kkp span{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap}
 .kkp b{font-size:19px;font-variant-numeric:tabular-nums}.kkp small{font-size:11.5px;color:var(--muted);margin-left:3px}.kkp em{display:block;font-style:normal;font-size:11.5px;color:var(--green);white-space:nowrap}.kkp em.up{color:var(--orange)}
 .klist{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;padding-right:4px;margin-right:-4px}
+.ksort{display:flex;align-items:center;gap:10px;margin:-4px 0 10px}.ksort > span{font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.ksort .hseg{padding:0 12px;font-size:13px}.kdir{font-style:normal;margin-left:4px;font-weight:700}
 .kmore{text-align:center;font-size:12.5px;color:var(--dim);padding:6px 0}.krow:not(.ted){cursor:default}.krow:not(.ted):hover{border-color:var(--tileb)}
 .krow{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:8px 12px 8px 8px;border-radius:14px;background:var(--tile);border:1px solid var(--tileb);cursor:pointer}.krow:hover{border-color:rgba(255,255,255,.2)}
 .kri{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--e-solar,#ff9800) 16%,transparent);color:var(--e-solar,#ff9800)}.kri.ext{background:rgba(244,114,182,.14);color:#f472b6}.kri ha-icon{--mdc-icon-size:18px}

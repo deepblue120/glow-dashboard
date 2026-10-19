@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=48`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=49`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -97,7 +97,7 @@ Alle Werte rechnet die Karte aus den Heimladungen (evcc-Ladelogbuch), den Fremdl
 | Bereich | Inhalt |
 |---|---|
 | Geladen | kWh je Stunde/Tag/Monat, gestapelt nach Heim PV, Heim Netz, Fremd AC, Fremd DC; Energie, Kosten (mit Vergleich zum Vorzeitraum), Ø Preis, Strecke, Verbrauch, €/100 km |
-| Ladungen im Zeitraum | alle Ladungen des Zeitraums in einer scrollbaren Liste (lädt beim Scrollen nach); Fremdladungen antippen zum Bearbeiten |
+| Ladungen im Zeitraum | alle Ladungen des Zeitraums in einer scrollbaren Liste (lädt beim Scrollen nach), sortierbar nach Datum, Menge oder Kosten; Fremdladungen antippen zum Bearbeiten |
 | Aufschlüsselung | kWh, € und ct/kWh je Quelle plus anteilige Ladekarten-Grundgebühren (Heim-PV mit der Einspeisevergütung bewertet) |
 | Vergleich Verbrenner | gespart im Zeitraum und seit Einrichtung, Elektro vs. Verbrenner, €/100 km, Liter, CO₂ – Verbrennerkosten je km aus dem ev_assistant-Vergleich seit Einrichtung |
 
@@ -197,6 +197,7 @@ car:
 |---------|-------|
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
+| 3.6.4  | Laden & Kosten: Ladungen nach Datum, Menge oder Kosten sortieren |
 | 3.6.3  | Laden & Kosten: alle Ladungen des Zeitraums in einer scrollbaren Liste (lädt beim Scrollen nach) |
 | 3.6.2  | Einstellungen: Urlaubsmodus, Fahrtenbuch als CSV exportieren und Fahrten importieren |
 | 3.6.1  | Ladeplan überarbeitet (Auswahl für Ziel-% / Ziel-km, aktiver Plan wird angezeigt), Seiten-Tabs mittig |
