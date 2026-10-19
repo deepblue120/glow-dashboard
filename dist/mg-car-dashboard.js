@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=51  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=52  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.6.6";
+const VERSION = "3.6.7";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -215,7 +215,7 @@ class MgCarDashboard extends HTMLElement {
   }
   connectedCallback() {
     if (!this._onResize) {
-      this._onResize = () => { cancelAnimationFrame(this._fitRaf); this._fitRaf = requestAnimationFrame(() => { this._fit(); this._render_trips(); this._kFit(); }); };
+      this._onResize = () => { cancelAnimationFrame(this._fitRaf); this._fitRaf = requestAnimationFrame(() => { this._fit(); this._render_trips(); this._kFit(); this._fitHist(); }); };
       this._ro = new ResizeObserver(this._onResize);
     }
     window.addEventListener("resize", this._onResize);
@@ -330,6 +330,7 @@ class MgCarDashboard extends HTMLElement {
     if (this._subPage() === "cost") this._render_cost();
     if (this._dlg === "ana") this._renderAnaDlg();
     if (this._dlg === "pend") this._renderPend();
+    requestAnimationFrame(() => this._fitHist());
   }
 
   /* evcc setzt die Sitzungswerte nach dem Laden auf 0 → letzte echte Sitzung aus dem Verlauf holen */
@@ -716,9 +717,8 @@ class MgCarDashboard extends HTMLElement {
     const { v } = this._pvMinCur(ma), rv = v == null ? null : Math.round(v / 5) * 5;
     let opts = `<option value=""${v == null ? " selected" : ""}>aus</option>`;
     for (let x = 0; x <= 100; x += 5) opts += `<option value="${x}"${rv === x ? " selected" : ""}>${x} %</option>`;
-    return `<label class="mbtn mpvmin mdrop${v != null ? " on" : ""}" title="Netzstrom nur dazunehmen, wenn mindestens dieser Anteil aus PV kommt">
-      ${icon("mdi:solar-power-variant")}<div class="mtx"><b>${v == null ? "aus" : `ab ${de(v, 0)} %`}</b><span>PV-Anteil</span></div>${icon("mdi:chevron-down", "mchv")}
-      <select class="pvminsel" aria-label="Laden ab PV-Anteil">${opts}</select></label>`;
+    return `<button class="mbtn lim" data-act="pvminmenu" title="Netzstrom nur dazunehmen, wenn mindestens dieser Anteil aus PV kommt">
+      ${icon("mdi:solar-power-variant")}<div class="mtx"><b>${v == null ? "aus" : `ab ${de(v, 0)} %`}</b><span>PV-Anteil</span></div>${icon("mdi:chevron-down", "mchv")}</button>`;
   }
   /* Puffer für den Bedarf morgen (ev_assistant: set_usage_profile_buffer_km, 0–300 km) */
   _bufInfo() {
@@ -731,9 +731,8 @@ class MgCarDashboard extends HTMLElement {
     const B = this._bufInfo();
     let opts = B.cur == null ? `<option value="" selected>${isNaN(B.pct) ? "–" : `${de(B.pct, 0)} %`}</option>` : "";
     for (let v = 0; v <= 300; v += 5) opts += `<option value="${v}"${B.cur != null && Math.round(B.cur / 5) * 5 === v ? " selected" : ""}>${v} km</option>`;
-    return `<label class="mbtn mbuf mdrop" title="Sicherheitspuffer auf den Bedarf für morgen">
-      ${icon("mdi:shield-car")}<div class="mtx"><b>${B.cur != null ? `${de(B.cur, 0)} km` : isNaN(B.pct) ? "–" : `${de(B.pct, 0)} %`}</b><span>Puffer</span></div>${icon("mdi:chevron-down", "mchv")}
-      <select class="mbufsel" aria-label="Puffer in km">${opts}</select></label>`;
+    return `<button class="mbtn lim" data-act="bufmenu" title="Sicherheitspuffer auf den Bedarf für morgen">
+      ${icon("mdi:shield-car")}<div class="mtx"><b>${B.cur != null ? `${de(B.cur, 0)} km` : isNaN(B.pct) ? "–" : `${de(B.pct, 0)} %`}</b><span>Puffer</span></div>${icon("mdi:chevron-down", "mchv")}</button>`;
   }
   _setBuffer(v) {
     const id = this._evaEntryId(); if (!id) return;
@@ -1483,8 +1482,7 @@ class MgCarDashboard extends HTMLElement {
         <div class="gax">${ticks.filter(([x]) => x < 90).map(([x, l]) => `<span class="${x < 4 ? "st" : ""}" style="left:${x}%">${l}</span>`).join("")}<span class="now" style="left:100%">jetzt</span></div>
         <div class="gtip" hidden></div>
         <span class="gmax">${de(maxK, 1)} kWh${{ h: "/h", d: "/Tag", w: "/Woche" }[B.unit]}</span></div>
-      <div class="glg">${B.split ? `<span class="pvl">PV/Speicher ${de(sum.p, 1)} kWh</span><span class="grl">Netz ${de(sum.g, 1)} kWh</span>` : `<span class="kwl">Geladen ${de(sum.k, 1)} kWh</span>`}<span class="s">Ladestand ${Math.round(nowS)} %</span>
-<span class="src">${{ h: "Stundenwerte", d: "Tageswerte", w: "Wochenwerte" }[B.unit]}${B.src === "evcc-log" ? " aus dem evcc-Ladelogbuch" : B.src === "evcc" ? " · PV-Anteil aus evcc" : ""}</span></div>`;
+      <div class="glg">${B.split ? `<span class="pvl">PV/Speicher ${de(sum.p, 1)} kWh</span><span class="grl">Netz ${de(sum.g, 1)} kWh</span>` : `<span class="kwl">Geladen ${de(sum.k, 1)} kWh</span>`}<span class="s">Ladestand ${Math.round(nowS)} %</span></div>`;
   }
 
   /* Maus/Finger über den Balken: Werte anzeigen */
@@ -2765,6 +2763,17 @@ class MgCarDashboard extends HTMLElement {
   /* Abstand der Karte zum Seitenanfang, unabhängig von der Scrollposition. HA (auch die Companion-App) scrollt in einem
      eigenen Container statt im Fenster – dessen scrollTop muss mitgezählt werden, sonst wirkt die Karte beim Scrollen
      „ganz oben“ (Safe-Area-Abstand springt an, die Seite verschiebt sich) */
+  /* An die Fensterhöhe angepasst: das Verlaufsdiagramm so weit verkleinern (110–200 px), dass die rechte Spalte ohne Scrollbalken auskommt */
+  _fitHist() {
+    const h = this.shadowRoot?.getElementById("hist"), col = h?.parentElement, ch = h?.querySelector(".chist");
+    if (!h || !col || !ch || col.offsetParent === null) return;
+    if (!this.shadowRoot.querySelector(".wrap")?.classList.contains("fit")) { if (h._chh) { h._chh = 0; h.style.removeProperty("--chh"); } return; }
+    const cur = ch.getBoundingClientRect().height, over = col.scrollHeight - col.clientHeight;
+    const last = [...col.children].filter((x) => !x.hidden && x.offsetParent !== null).pop();
+    const slack = last ? col.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom : 0;
+    const want = Math.round(Math.max(110, Math.min(200, over > 0 ? cur - over - 2 : cur + Math.max(0, slack - 4))));
+    if (Math.abs(want - cur) >= 2 && want !== h._chh) { h._chh = want; h.style.setProperty("--chh", want + "px"); }
+  }
   _docTop() {
     let y = this.getBoundingClientRect().top + window.scrollY;
     for (let n = this.parentNode || this.getRootNode()?.host; n && n !== document; n = n.parentNode || n.host) if (n.scrollTop) y += n.scrollTop;
@@ -3004,6 +3013,19 @@ class MgCarDashboard extends HTMLElement {
     }
     if (act === "limmenu") { this._openLimMenu(el); return; }
     if (act === "evalimmenu") { this._openEvaLimMenu(el); return; }
+    if (act === "pvminmenu" || act === "bufmenu") {   // Auswahl wie beim Ladeziel
+      this._closeMenu();
+      const pv = act === "pvminmenu", ma = this._st(this._eva().evcc_mode_control)?.attributes || {};
+      const cur = pv ? this._pvMinCur(ma).v : this._bufInfo().cur, rc = cur == null ? null : Math.round(cur / 5) * 5;
+      const opts = pv ? [null, ...Array.from({ length: 21 }, (_, i) => i * 5)] : Array.from({ length: 61 }, (_, i) => i * 5);
+      const menu = document.createElement("div"); menu.className = "menu limm";
+      menu.innerHTML = opts.map((v) => { const isCur = v === rc; return `<button class="mg-menu-item mi ${isCur ? "cur" : ""}" data-act="${pv ? "pvminset" : "bufset"}" data-v="${v ?? ""}"><span>${v == null ? "aus" : `${v} ${pv ? "%" : "km"}`}</span>${isCur ? icon("mdi:check", "ck") : ""}</button>`; }).join("");
+      this._openMenuAt(el, menu);
+      const cm = menu.querySelector(".cur"); if (cm) menu.scrollTop = Math.max(0, cm.offsetTop - menu.clientHeight / 2);
+      return;
+    }
+    if (act === "pvminset") { this._closeMenu(); this._setPvMin(el.dataset.v); return; }
+    if (act === "bufset") { this._closeMenu(); this._setBuffer(Number(el.dataset.v)); return; }
     if (act === "evalimset") {
       this._closeMenu();
       const v = Number(el.dataset.v);
@@ -3384,7 +3406,7 @@ const CAR_STYLE = `
 #hist .hd{flex-wrap:wrap;row-gap:10px}
 #hist .hsegs{order:3;margin-left:0;width:100%}
 #hist .hseg{flex:1;text-align:center}
-#hist .chist{height:200px}
+#hist .chist{height:var(--chh,200px)}
 .wrap.carpage.fit #hist{flex:none;min-height:0}
 .carpage .panel.car .carbody{cursor:default}
 .carpage .soc{font-size:76px}
@@ -3760,7 +3782,7 @@ const CAR_STYLE = `
 .pages{display:grid!important;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px}.pages > .hsegs{grid-column:2}
 .kper{grid-column:3;justify-self:end;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .knav{display:flex;align-items:center;gap:4px}.knav b{min-width:120px;text-align:center;font-size:15px}.knav .sic[disabled]{opacity:.3;pointer-events:none}
-.kgrid{grid-template-columns:2fr 1fr!important;align-content:start}.wrap.fit .kgrid{grid-template-rows:none;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+.kgrid{grid-template-columns:2fr 1fr!important;align-content:start}.kgrid > .col{align-self:stretch}.kgrid > .col > section:last-child{flex:1 1 auto!important}.wrap.fit .kgrid{grid-template-rows:none;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
 .kpv{background:var(--e-solar,#ff9800)}.kgr{background:var(--e-grid-in,#488fc2)}.kac{background:#a78bfa}.kdc{background:#f472b6}.kfee{background:#64748b}
 .kchart{display:flex;align-items:flex-end;gap:4px;height:190px;border-bottom:1px solid var(--line)}
 .kc{flex:1;min-width:0;display:flex;flex-direction:column-reverse;border-radius:5px 5px 2px 2px;overflow:hidden;transition:filter .15s}.kc:hover{filter:brightness(1.25)}.kc i{display:block;width:100%}
