@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=50  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=51  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.6.5";
+const VERSION = "3.6.6";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -245,6 +245,7 @@ class MgCarDashboard extends HTMLElement {
         else if (e.type === "change" && c.contains("simpfile")) { const f = t.files?.[0]; t.value = ""; this._readTripImport(f); }
         else if (e.type === "change" && c.contains("fpreset")) this._wtPreset(t.value, true);
         else if (e.type === "change" && c.contains("pvminsel")) { t.blur(); this._setPvMin(t.value); }
+        else if (e.type === "change" && c.contains("mbufsel")) { t.blur(); if (t.value !== "") this._setBuffer(Number(t.value)); }
         else if (e.type === "change" && c.contains("mptgt")) { if (t.dataset.u === "km") this._planKm = Number(t.value); else this._planSoc = Number(t.value); this._planTime = this.shadowRoot.querySelector("#mgmt .pin")?.value; t.blur(); this._render_mgmt(); }
         else if (e.type === "change" && c.contains("slogkat")) { this._logKat = t.value; this._renderLogList(); }
         else if (e.type === "input" && c.contains("slogq")) { this._logQ = t.value; this._renderLogList(); }
@@ -510,7 +511,7 @@ class MgCarDashboard extends HTMLElement {
   /* --- Lademanagement: Vorgabe, evcc-Modus (inkl. Immer laden), Ladestrom, Mindestladung, Ladeplan + Vollladung (ev_assistant) --- */
   _render_mgmt() {
     const el = this.shadowRoot.getElementById("mgmt"); if (!el) return;
-    if (/\b(pin|pvminsel|mptgt)\b/.test(this.shadowRoot.activeElement?.className || "")) return;   // während der Eingabe nicht neu zeichnen
+    if (/\b(pin|pvminsel|mptgt|mbufsel)\b/.test(this.shadowRoot.activeElement?.className || "")) return;   // während der Eingabe nicht neu zeichnen
     const c = this._config.car, ev = c.evcc || {}, E = this._eva();
     const step = (lbl, ic, cfgId, unit) => {
       const id = this._real(cfgId), st = this._st(id); if (!st) return "";   // nur eine echte Entität lässt sich einstellen
@@ -647,14 +648,14 @@ class MgCarDashboard extends HTMLElement {
     // zweite Kachel: alle manuellen Modi als Auswahl (Aus, Smart · aus/1x/immer, Schnell)
     const man = EVA_MANUAL.find((m) => m.v === sel);
     this._evaSelCur = man?.v || null;
-    const modes = `<div class="mmodes m3">
-      ${tile(EVA_AUTO, sel === "auto", "evamode2", `${icon(EVA_AUTO.icon)}<b>Auto</b>`, `data-v="auto"`)}
-      ${tile({ color: (man || {}).color || EVA_SMART.color, title: "Lademodus manuell wählen" }, !!man, "evamanmenu", `${man ? (man.glyph ? `<span class="glyph">${man.glyph}</span>` : icon(man.icon)) : icon("mdi:hand-back-right-outline")}<b>${man ? esc(man.short) : "Manuell"}</b>${icon("mdi:chevron-down", "mchv")}`)}
-      ${this._pvMinTile(ma, "mmode")}</div>`;
-
-    // --- ev_assistant: Ladeziel, Vollladung, Automatik pausieren ---
+    // oben: Automatik · Manuell · Vollladung
     const r = this._renderLimitRow(this._config.car, this._config.car.evcc || {}, E, ma, mc);
-    const ctl = `<div class="mbottom m3">${r.lim}${r.bal}${r.pause}</div>`;
+    const manBtn = `<button class="mbtn man ${man ? "on" : ""}" style="--cc:${(man || {}).color || "var(--muted)"}" data-act="evamanmenu" title="Lademodus manuell wählen (Aus, Smart, Schnell)">
+        ${man ? (man.glyph ? `<span class="glyph">${man.glyph}</span>` : icon(man.icon)) : icon("mdi:hand-back-right-outline")}<div class="mtx"><b>${man ? esc(man.short) : "Manuell"}</b><span>${man ? "manuell" : "Lademodus"}</span></div>${icon("mdi:chevron-down", "mchv")}</button>`;
+    const modes = `<div class="mbottom m3">${r.pause}${manBtn}${r.bal}</div>`;
+
+    // unten: Ladeziel · PV-Anteil · Puffer
+    const ctl = `<div class="mbottom m3">${r.lim}${this._pvMinTile(ma, "mbtn")}${this._bufTile()}</div>`;
 
     // --- ev_assistant: Ladeplan – aktiver Plan oder Formular (Ziel als SoC oder km, Zielzeit) ---
     const pr = this._planReq;
@@ -685,10 +686,11 @@ class MgCarDashboard extends HTMLElement {
         for (let v = 10; v <= max; v += 10) opts += `<option value="${v}"${v === sel ? " selected" : ""}>${v} km${kmPerPct ? ` (≈ ${Math.min(100, Math.round(v / kmPerPct))} %)` : ""}</option>`;
       } else for (let v = 10; v <= 100; v += 5) opts += `<option value="${v}"${v === soc ? " selected" : ""}>${v} %${kmPerPct ? ` (≈ ${de(Math.round((v * kmPerPct) / 10) * 10, 0)} km)` : ""}</option>`;
       const usw = kmOk ? `<span class="hsegs mpu"><button class="hseg ${unit === "soc" ? "sel" : ""}" data-act="planunit" data-v="soc" title="Ziel-SoC direkt an evcc">%</button><button class="hseg ${unit === "km" ? "sel" : ""}" data-act="planunit" data-v="km" title="Ziel-Reichweite – ev_assistant rechnet in SoC um">km</button></span>` : "";
-      planBox = `<div class="mplan"><div class="mphd"><span class="mpl">${icon("mdi:calendar-plus")}${pi ? "Ladeplan ändern" : "Ladeplan"}</span>${usw}</div>
+      const setBtn = `<button class="qbtn" data-act="mplanset"${entry && !pr?.busy ? "" : " disabled"}>${icon(pr?.busy ? "mdi:timer-sand" : "mdi:check")}${pr?.busy ? "Wird gesetzt …" : "Plan setzen"}</button>`;
+      planBox = `<div class="mplan"><div class="mphd mph3"><span class="mpl">${icon("mdi:calendar-plus")}${pi ? "Ändern" : "Ladeplan"}</span><span class="mpc">${setBtn}</span><span class="mpr">${usw}</span></div>
         <div class="mpg"><label><span>Ziel</span><select class="msel mptgt" data-u="${unit}" aria-label="Ziel">${opts}</select></label>
           <label><span>Bis</span><input class="pin" type="datetime-local" value="${esc(val)}" data-act="none" aria-label="Zielzeit"></label></div>
-        <div class="mpb end">${pi ? `<button class="qbtn ghost" data-act="mplancancel">Abbrechen</button>` : ""}<button class="qbtn" data-act="mplanset"${entry && !pr?.busy ? "" : " disabled"}>${icon(pr?.busy ? "mdi:timer-sand" : "mdi:check")}${pr?.busy ? "Wird gesetzt …" : "Plan setzen"}</button></div>
+        ${pi ? `<div class="mpb end"><button class="qbtn ghost" data-act="mplancancel">Abbrechen</button></div>` : ""}
         ${reqMsg}</div>`;
     }
     const planForm = planBox;
@@ -714,9 +716,31 @@ class MgCarDashboard extends HTMLElement {
     const { v } = this._pvMinCur(ma), rv = v == null ? null : Math.round(v / 5) * 5;
     let opts = `<option value=""${v == null ? " selected" : ""}>aus</option>`;
     for (let x = 0; x <= 100; x += 5) opts += `<option value="${x}"${rv === x ? " selected" : ""}>${x} %</option>`;
-    return `<label class="${cls} mpvmin${v != null ? " sel" : ""}" style="--cc:var(--e-solar)" title="Netzstrom nur dazunehmen, wenn mindestens dieser Anteil aus PV kommt">
-      <span class="mmh">${icon("mdi:solar-power-variant")}<b>${v == null ? "PV aus" : `ab ${de(v, 0)} %`}</b>${icon("mdi:chevron-down", "mchv")}</span>
+    return `<label class="mbtn mpvmin mdrop${v != null ? " on" : ""}" title="Netzstrom nur dazunehmen, wenn mindestens dieser Anteil aus PV kommt">
+      ${icon("mdi:solar-power-variant")}<div class="mtx"><b>${v == null ? "aus" : `ab ${de(v, 0)} %`}</b><span>PV-Anteil</span></div>${icon("mdi:chevron-down", "mchv")}
       <select class="pvminsel" aria-label="Laden ab PV-Anteil">${opts}</select></label>`;
+  }
+  /* Puffer für den Bedarf morgen (ev_assistant: set_usage_profile_buffer_km, 0–300 km) */
+  _bufInfo() {
+    const na = this._ea("usage_profile_tomorrow")?.attributes || {}, km = na.puffer_art === "km" && !isNaN(parseFloat(na.puffer_km));
+    if (this._bufSet && (Date.now() - this._bufSet.t > 90000 || (km && parseFloat(na.puffer_km) === this._bufSet.v))) this._bufSet = null;
+    return { cur: this._bufSet ? this._bufSet.v : km ? parseFloat(na.puffer_km) : null, pct: parseFloat(na.puffer_prozent), kwh: parseFloat(na.puffer_kwh), km };
+  }
+  _bufTile() {
+    if (!this._hass?.services?.ev_assistant?.set_usage_profile_buffer_km || !this._evaEntryId()) return "";
+    const B = this._bufInfo();
+    let opts = B.cur == null ? `<option value="" selected>${isNaN(B.pct) ? "–" : `${de(B.pct, 0)} %`}</option>` : "";
+    for (let v = 0; v <= 300; v += 5) opts += `<option value="${v}"${B.cur != null && Math.round(B.cur / 5) * 5 === v ? " selected" : ""}>${v} km</option>`;
+    return `<label class="mbtn mbuf mdrop" title="Sicherheitspuffer auf den Bedarf für morgen">
+      ${icon("mdi:shield-car")}<div class="mtx"><b>${B.cur != null ? `${de(B.cur, 0)} km` : isNaN(B.pct) ? "–" : `${de(B.pct, 0)} %`}</b><span>Puffer</span></div>${icon("mdi:chevron-down", "mchv")}
+      <select class="mbufsel" aria-label="Puffer in km">${opts}</select></label>`;
+  }
+  _setBuffer(v) {
+    const id = this._evaEntryId(); if (!id) return;
+    this._bufSet = { v, t: Date.now() };
+    Promise.resolve(this._hass.callService("ev_assistant", "set_usage_profile_buffer_km", { config_entry_id: id, buffer_km: v }))
+      .catch((x) => { this._bufSet = null; this._render_mgmt(); this._render_morrow(); this._mgmtFail?.(x); });
+    this._render_mgmt(); if (this._subPage() === "prof") this._render_morrow();
   }
   // dieselbe Einstellung als Auswahl in einer Kennzahl-Kachel (Netz-Zuschuss auf „Profil & Analyse“)
   _pvMinSel(ma) {
@@ -845,8 +869,9 @@ class MgCarDashboard extends HTMLElement {
     // Automatik pausieren (gleiches Aussehen wie Vollladung)
     if (eva) {
       const paused = opt("pause", !!ma.pausiert);
-      btns.push(`<button class="mbtn pause ${paused ? "on" : ""}" data-act="mpause" data-v="${paused ? "0" : "1"}" title="${paused ? "ev_assistant schreibt nichts nach evcc – tippen zum Fortsetzen" : "ev_assistant steuert evcc – tippen zum Pausieren"}">
-        ${icon(paused ? "mdi:pause-circle" : "mdi:pause-circle-outline")}<div class="mtx"><b>Automatik</b><span>${paused ? "pausiert" : this._evaModeState().cur !== "auto" ? "manuell" : "läuft"}</span></div></button>`);
+      const run = !paused && this._evaModeState().cur === "auto";
+      btns.push(`<button class="mbtn pause ${paused || !run ? "on" : "run"}" data-act="mpause" data-v="${paused ? "0" : "1"}" title="${paused ? "ev_assistant schreibt nichts nach evcc – tippen zum Fortsetzen" : "ev_assistant steuert evcc – tippen zum Pausieren"}">
+        ${icon(paused ? "mdi:pause-circle" : run ? "mdi:robot-outline" : "mdi:hand-back-right-outline")}<div class="mtx"><b>Automatik</b><span>${paused ? "pausiert" : this._evaModeState().cur !== "auto" ? "manuell" : "läuft"}</span></div></button>`);
     }
     return { top, bottom: btns.length ? `<div class="mbottom mact">${btns.join("")}</div>` : "", bal: btns[0] || "", pause: btns[1] || "", lim: limBtn };
   }
@@ -1616,11 +1641,7 @@ class MgCarDashboard extends HTMLElement {
       this._bufBound = true;
       el.addEventListener("change", (e) => {
         const t = e.target; if (!t?.classList?.contains("pbufsel") || t.value === "") return;
-        const v = Number(t.value), id = this._evaEntryId(); t.blur();
-        if (!id) return;
-        this._bufSet = { v, t: Date.now() };
-        Promise.resolve(this._hass.callService("ev_assistant", "set_usage_profile_buffer_km", { config_entry_id: id, buffer_km: v }))
-          .catch((x) => { this._bufSet = null; this._render_morrow(); this._mgmtFail?.(x); });
+        t.blur(); this._setBuffer(Number(t.value));
       });
     }
     const rec = this._ea("charge_before_pv_recommended"), ra = rec?.attributes || {};
@@ -3460,6 +3481,13 @@ const CAR_STYLE = `
 .mbtn.bal.on b{color:var(--green)}
 .mbtn.bal.act{animation:mgpulse 1.4s ease-in-out infinite}
 .mbtn.pause.on{border-color:rgba(251,146,60,.45);background:rgba(251,146,60,.1)}
+.mbtn.pause.run{border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1)}.mbtn.pause.run ha-icon,.mbtn.pause.run b{color:var(--green)}
+.mbtn.man.on{border-color:color-mix(in srgb,var(--cc) 45%,transparent);background:color-mix(in srgb,var(--cc) 10%,transparent)}.mbtn.man.on b,.mbtn.man.on > ha-icon:first-child,.mbtn.man.on .glyph{color:var(--cc)}
+.mbtn .glyph{font-size:13px;font-weight:800;min-width:18px;text-align:center;color:var(--muted)}
+.mbtn.mdrop{position:relative}.mbtn.mdrop select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}.mbtn.mdrop:focus-within{border-color:rgba(255,255,255,.3)}
+.mbtn.mpvmin.on b,.mbtn.mpvmin.on > ha-icon:first-child{color:var(--e-solar,#ff9800)}.mbtn.mpvmin.on{border-color:rgba(255,152,0,.35)}
+.mbtn.mbuf b,.mbtn.mbuf > ha-icon:first-child{color:var(--violet,#a78bfa)}
+.mph3{display:grid!important;grid-template-columns:1fr auto 1fr}.mph3 .mpr{justify-self:end}.mph3 .mpc{justify-self:center}
 .mbtn.pause.on ha-icon,.mbtn.pause.on b{color:var(--orange)}
 .mbtn.tnow b{color:var(--text)}
 .mbtn.tnow ha-icon:first-child{color:var(--muted)}
