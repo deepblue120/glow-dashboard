@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=47  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=48  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.6.2";
+const VERSION = "3.6.3";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -215,7 +215,7 @@ class MgCarDashboard extends HTMLElement {
   }
   connectedCallback() {
     if (!this._onResize) {
-      this._onResize = () => { cancelAnimationFrame(this._fitRaf); this._fitRaf = requestAnimationFrame(() => { this._fit(); this._render_trips(); }); };
+      this._onResize = () => { cancelAnimationFrame(this._fitRaf); this._fitRaf = requestAnimationFrame(() => { this._fit(); this._render_trips(); this._kFit(); }); };
       this._ro = new ResizeObserver(this._onResize);
     }
     window.addEventListener("resize", this._onResize);
@@ -1777,6 +1777,15 @@ class MgCarDashboard extends HTMLElement {
     }
     return { a: a.getTime(), b: b.getTime(), unit, label };
   }
+  // Höhe der Ladungsliste: so groß, dass die linke Spalte bis zum Fensterrand reicht und die Seite nicht scrollt
+  _kFit() {
+    const box = this.shadowRoot.querySelector("#klist .klist"), col = this.shadowRoot.querySelector("#pcost");
+    if (!box || !col || col.hidden) return;
+    const narrow = col.getBoundingClientRect().width < 900;
+    let h = narrow ? Math.round(window.innerHeight * 0.6) : Math.floor(window.innerHeight - box.getBoundingClientRect().top - 44);
+    h = Math.max(220, h);
+    if (box._h !== h) { box._h = h; box.style.maxHeight = h + "px"; }
+  }
   _cpBuckets(R) {
     const out = [], d = new Date(R.a);
     while (d.getTime() < R.b && out.length < 400) {
@@ -1870,17 +1879,32 @@ class MgCarDashboard extends HTMLElement {
       <div class="kkp">${kp("Energie", de(S.kwh, 1), "kWh", delta(S.kwh, SP?.kwh))}${kp("Kosten", de(S.total, 2), "€", delta(S.total, SP?.total))}${kp("Ø Preis", S.kwh > 0.1 ? de((S.cost / S.kwh) * 100, 1) : "–", "ct/kWh")}
         ${kp("Strecke", de(S.km, 0), "km")}${kp("Verbrauch", cons != null ? de(cons, 1) : "–", "kWh/100")}${kp("€ / 100 km", per100 != null ? de(per100, 2) : "–", "€")}</div>`;
 
-    // --- Ladungen im Zeitraum ---
-    const rows = [...S.list].sort((x, y) => y.ts - x.ts).slice(0, 6).map((x) => {
+    // --- Ladungen im Zeitraum: alle des Zeitraums in einer scrollbaren Liste, weitere werden beim Scrollen nachgeladen ---
+    const kKey = `${cp.p}|${cp.off}`;
+    if (this._kKey !== kKey) { this._kKey = kKey; this._kN = 30; }
+    const all = [...S.list].sort((x, y) => y.ts - x.ts), shown = Math.min(this._kN, all.length);
+    this._kMore = shown < all.length;
+    const rows = all.slice(0, shown).map((x) => {
       const d = new Date(x.ts), ed = x.type === "ext" && x.raw?.erfasst_ts != null;
       const sp = this._cpSplit(x, fi), what = x.type === "home" ? `Zuhause${x.pv != null ? ` · ${Math.round(x.pv)} % PV` : ""}` : `${esc(x.who)} · ${sp.dc ? "DC" : "AC"}`;
-      return `<div class="krow${ed ? " ted" : ""}"${ed ? ` data-act="set" data-k="ch-edit" data-id="${esc(x.raw.erfasst_ts)}"` : ` data-act="charges"`}>
+      return `<div class="krow${ed ? " ted" : ""}"${ed ? ` data-act="set" data-k="ch-edit" data-id="${esc(x.raw.erfasst_ts)}" title="Fremdladung bearbeiten"` : ""}>
         <span class="kri ${x.type}">${icon(x.type === "home" ? "mdi:home-lightning-bolt" : "mdi:ev-station")}</span>
         <span class="krt"><b>${WD[d.getDay()]} ${d.getDate()}. ${MON[d.getMonth()]}</b><small>${what}${x.s0 != null && x.s1 != null ? ` · ${Math.round(x.s0)} → ${Math.round(x.s1)} %` : ""}</small></span>
         <span class="krv"><b>${x.kwh != null ? de(x.kwh, 1) : "–"} kWh</b><small>${x.cost != null ? `${de(x.cost, 2)} €` : ""}</small></span></div>`;
     }).join("");
-    sr.getElementById("klist").innerHTML = this._hd("Ladungen im Zeitraum", `${S.n} Ladung${S.n === 1 ? "" : "en"}`)
-      + (rows ? `<div class="klist">${rows}</div>${S.n > 6 ? `<button class="sbt kall" data-act="charges">Alle Ladungen</button>` : ""}` : `<div class="empty">${loading ? "Lädt …" : "Keine Ladungen in diesem Zeitraum."}</div>`);
+    const kl = sr.getElementById("klist"), oldBox = kl.querySelector(".klist"), keepTop = oldBox && this._kKeyShown === kKey ? oldBox.scrollTop : 0;
+    kl.innerHTML = this._hd("Ladungen im Zeitraum", `${S.n} Ladung${S.n === 1 ? "" : "en"}`)
+      + (rows ? `<div class="klist">${rows}${this._kMore ? `<div class="kmore">${shown} von ${all.length} – weiter scrollen</div>` : ""}</div>` : `<div class="empty">${loading ? "Lädt …" : "Keine Ladungen in diesem Zeitraum."}</div>`);
+    this._kKeyShown = kKey;
+    const box = kl.querySelector(".klist");
+    if (box) {
+      if (box.scrollTop !== keepTop) box.scrollTop = keepTop;
+      if (!box._sc) {   // beim Scrollen ans Ende die nächsten Ladungen anhängen
+        box._sc = true;
+        box.addEventListener("scroll", () => { if (this._kMore && box.scrollHeight - box.scrollTop - box.clientHeight < 300) { this._kMore = false; this._kN += 30; this._render_cost(); } }, { passive: true });
+      }
+      requestAnimationFrame(() => this._kFit());
+    }
 
     // --- Aufschlüsselung ---
     const src = [["kpv", "Heim PV", S.pv], ["kgr", "Heim Netz", S.gr], ["kac", "Fremd AC", S.ac], ["kdc", "Fremd DC", S.dc]];
@@ -3713,7 +3737,8 @@ const CAR_STYLE = `
 .kkp div{padding:9px 11px;border-radius:15px;background:var(--tile);border:1px solid var(--tileb);min-width:0}
 .kkp span{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap}
 .kkp b{font-size:19px;font-variant-numeric:tabular-nums}.kkp small{font-size:11.5px;color:var(--muted);margin-left:3px}.kkp em{display:block;font-style:normal;font-size:11.5px;color:var(--green);white-space:nowrap}.kkp em.up{color:var(--orange)}
-.klist{display:flex;flex-direction:column;gap:6px}
+.klist{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;padding-right:4px;margin-right:-4px}
+.kmore{text-align:center;font-size:12.5px;color:var(--dim);padding:6px 0}.krow:not(.ted){cursor:default}.krow:not(.ted):hover{border-color:var(--tileb)}
 .krow{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:8px 12px 8px 8px;border-radius:14px;background:var(--tile);border:1px solid var(--tileb);cursor:pointer}.krow:hover{border-color:rgba(255,255,255,.2)}
 .kri{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--e-solar,#ff9800) 16%,transparent);color:var(--e-solar,#ff9800)}.kri.ext{background:rgba(244,114,182,.14);color:#f472b6}.kri ha-icon{--mdc-icon-size:18px}
 .krt,.krv{display:flex;flex-direction:column;min-width:0}.krt small,.krv small{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.krv{align-items:flex-end;font-variant-numeric:tabular-nums}
