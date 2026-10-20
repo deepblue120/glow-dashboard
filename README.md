@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=54`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=55`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -164,6 +164,7 @@ car:
 
 | Option | Bedeutung |
 |--------|-----------|
+| `language` | Sprache der Karte: `de` oder `en`. Ohne Angabe die Sprache von Home Assistant (Englisch bei `en…`, sonst Deutsch). Datum und Zeit folgen der Sprache, Zahlen zusätzlich dem Zahlenformat im HA-Profil |
 | `fit_screen` | Seite an die Fensterhöhe anpassen (Desktop) |
 | `debug` | Diagnose-Meldungen in der Browser-Konsole |
 | `energy.car_power` / `grid_import` / `home` | Ladeleistung, Netzbezug, Hausverbrauch für den Verlauf (Aufteilung Netz/PV) |
@@ -198,6 +199,7 @@ car:
 | 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
 | 3.5.28 | Auswahllisten einheitlich (Ladeplan-Ziel, Puffer und PV auf Profil & Analyse, Protokoll-Kategorie), Datumsfelder öffnen den Kalender |
+| 3.5.29 | Englische Oberfläche (Sprache aus Home Assistant oder `language`), Schrift „Outfit“ in der Karte enthalten statt von Google geladen |
 | 3.5.27 | Lademanagement: PV-Anteil wieder orange, Puffer grün |
 | 3.5.26 | Übersicht ohne Scrollbalken rechts, PV-Anteil/Puffer mit Auswahl wie Ladeziel, Laden & Kosten bündig |
 | 3.5.25 | Lademanagement: Automatik · Manuell · Vollladung / Ladeziel · PV-Anteil · Puffer, „Plan setzen“ mittig |
@@ -222,3 +224,20 @@ car:
 | 3.5.7  | Unterseite „Einstellungen“ (Wartung, Ladekarten, Fahrzeugbild, Daten, Ereignisprotokoll) |
 | 3.5.6  | Profil & Analyse: PV morgen abzüglich Hausverbrauch, Puffer (0–300 km) direkt einstellbar |
 | 3.5.5  | Unterseite „Profil & Analyse“ |
+
+## Übersetzungen
+
+Die Texte der Auto-Karte stehen auf Deutsch im Code (`T("…")`), die englischen Entsprechungen im Katalog `I18N`
+am Ende von `mg-car-dashboard.js`. Neue Texte dort ergänzen; die Prüfung meldet fehlende oder nicht mehr verwendete
+Einträge und unterschiedliche Platzhalter:
+
+```sh
+node scripts/check-i18n.mjs
+```
+
+Texte aus ev_assistant (z. B. Kategorien im Ereignisprotokoll, Modusnamen der Wallbox) bleiben unübersetzt.
+
+## Schrift
+
+Die Schrift [Outfit](https://github.com/Outfitio/Outfit-Fonts) (SIL Open Font License 1.1) ist in `mg-car-dashboard.js`
+eingebettet (lateinischer Zeichensatz, Variable Font). Lizenztext: [`dist/OFL-Outfit.txt`](dist/OFL-Outfit.txt). Die Karte lädt nichts von Google oder anderen Servern nach.

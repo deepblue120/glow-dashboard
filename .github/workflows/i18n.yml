@@ -1,0 +1,18 @@
+name: Übersetzungen prüfen
+
+on:
+  push:
+    paths: ["dist/mg-car-dashboard.js", "scripts/check-i18n.mjs"]
+  pull_request:
+    paths: ["dist/mg-car-dashboard.js", "scripts/check-i18n.mjs"]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --check dist/mg-car-dashboard.js
+      - run: node scripts/check-i18n.mjs
