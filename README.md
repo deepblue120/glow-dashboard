@@ -27,7 +27,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=55`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=56`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -200,6 +200,7 @@ car:
 | 3.5.4  | mg-car-dashboard.js (eigenständig) |
 | 3.5.28 | Auswahllisten einheitlich (Ladeplan-Ziel, Puffer und PV auf Profil & Analyse, Protokoll-Kategorie), Datumsfelder öffnen den Kalender |
 | 3.5.29 | Englische Oberfläche (Sprache aus Home Assistant oder `language`), Schrift „Outfit“ in der Karte enthalten statt von Google geladen |
+| 3.5.30 | Profil & Analyse: Fenster „Autarkie“ mit Autarkiegrad und Ersparnis beim Heimladen gegenüber reinem Netzstrom |
 | 3.5.27 | Lademanagement: PV-Anteil wieder orange, Puffer grün |
 | 3.5.26 | Übersicht ohne Scrollbalken rechts, PV-Anteil/Puffer mit Auswahl wie Ladeziel, Laden & Kosten bündig |
 | 3.5.25 | Lademanagement: Automatik · Manuell · Vollladung / Ladeziel · PV-Anteil · Puffer, „Plan setzen“ mittig |
