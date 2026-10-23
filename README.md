@@ -7,6 +7,7 @@ Custom Lovelace cards for Home Assistant — dark, modern, card-based.
 | Karte | Beschreibung |
 |-------|-------------|
 | `custom:mg-car-dashboard` | Auto-Seite mit evcc, ev_assistant, Fahrtenbuch |
+| `custom:mg-network-dashboard` | Server, NAS, UniFi, Drucker – `variant: 1` Geräte-Kacheln, `variant: 2` Übersicht mit aufklappbaren Geräten (Datei `dist/mg-network-dashboard.js`) |
 
 ## Installation
 
