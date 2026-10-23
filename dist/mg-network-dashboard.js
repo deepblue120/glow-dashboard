@@ -108,7 +108,7 @@ const DEFAULT_DEVICES = [
       { entity: "sensor.hp_laserjet_pro_m404dn_192_168_178_67_black_toner_level_2", name: "Toner", icon: "mdi:water", color: C.green, invert: true, warn: 25, crit: 10, ring: true, ...PCT },
     ],
     chips: [
-      { entity: "sensor.hp_laserjet_pro_m404dn_192_168_178_67_status_2", name: "Status", icon: "mdi:printer-check", status: true },
+      { entity: "sensor.hp_laserjet_pro_m404dn_192_168_178_67_status", name: "Status", icon: "mdi:printer-check", status: true },
       { entity: "binary_sensor.hp_laserjet_pro_m404dn_192_168_178_67_eprint_status_2", name: "ePrint", icon: "mdi:network-outline", ok: ["on"], labels: { on: "Online", off: "Offline" } },
       { entity: "sensor.hp_laserjet_pro_m404dn_192_168_178_67_printer_gesamtseiten_2", name: "Gesamtseiten", icon: "mdi:file-document-multiple-outline", decimals: 0 },
       { entity: "sensor.hp_laserjet_pro_m404dn_192_168_178_67_black_toner_verbleibend_2", name: "Seiten übrig", icon: "mdi:water", low: { warn: 200, crit: 100 }, decimals: 0 },
@@ -457,11 +457,10 @@ class MgNetworkDashboard extends HTMLElement {
   // ---- Variante 1: drei Geräte nebeneinander wie in der alten Karte ---------------
   _panel(d, kids = []) {
     const st = this._devStatus(d);
-    const photo = d.image ? `<div class="photo"><img src="${esc(d.image)}" alt="" onerror="this.parentNode.remove()"></div>` : "";
     const sub = kids.map((k) => `<div class="subp"><div class="subh"><ha-icon icon="${esc(k.icon || "mdi:printer")}"></ha-icon>${esc(k.name)}<span>${esc(k.sub || "")}</span></div>${this._body(k)}</div>`).join("");
     return `<section class="panel dev" id="p-${esc(d.id)}">
       <div class="hd">${this._avatar(d)}<div class="rtx"><div class="ttl">${esc(d.name)}</div><div class="rsub">${esc(d.sub || "")}</div></div>
-      ${st.txt ? `<span class="pill t-${st.tone}"><i></i>${esc(st.txt)}</span>` : ""}</div>${photo}${this._body(d)}${sub}</section>`;
+      ${st.txt ? `<span class="pill t-${st.tone}"><i></i>${esc(st.txt)}</span>` : ""}</div>${this._body(d)}${sub}</section>`;
   }
 
   _v1(devs) {
@@ -741,8 +740,8 @@ ha-icon{--mdc-icon-size:20px;display:inline-flex}
 .big .pill{height:36px;font-size:15px;padding:0 14px}
 .photo{height:150px;margin:0 0 18px;border-radius:22px;background:radial-gradient(90% 90% at 50% 40%,rgba(255,255,255,.07),rgba(255,255,255,.015));border:1px solid var(--line);display:grid;place-items:center;overflow:hidden}
 .photo img{max-width:92%;max-height:92%;object-fit:contain;filter:drop-shadow(0 8px 14px rgba(0,0,0,.5))}
-.big .meters{gap:6px;margin-bottom:18px}
-.big .mt{grid-template-columns:26px 92px minmax(0,1fr) auto;min-height:46px;gap:12px}
+.big .meters{gap:0;margin-bottom:16px}
+.big .mt{grid-template-columns:26px 92px minmax(0,1fr) auto;min-height:34px;gap:12px;padding:3px 4px}
 .big .mt ha-icon{--mdc-icon-size:22px}.big .mn{font-size:16px}
 .big .mbar{height:14px;border-radius:8px}.big .mbar span{border-radius:8px}
 .big .mt b{font-size:18px;min-width:90px}.big .mt small{font-size:13px}
