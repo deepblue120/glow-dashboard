@@ -103,7 +103,7 @@ const DEFAULT_DEVICES = [
     extras: [{ type: "rssi", entity: "sensor.rssi_werte_kleiner_90" }],
   },
   {
-    id: "printer", name: "HP LaserJet", sub: "Pro M404dn", icon: "mdi:printer",
+    id: "printer", parent: "nas", name: "HP LaserJet", sub: "Pro M404dn", icon: "mdi:printer",
     meters: [
       { entity: "sensor.hp_laserjet_pro_m404dn_192_168_178_67_black_toner_level_2", name: "Toner", icon: "mdi:water", color: C.green, invert: true, warn: 25, crit: 10, ring: true, ...PCT },
     ],
@@ -147,7 +147,6 @@ class MgNetworkDashboard extends HTMLElement {
     this.shadowRoot.addEventListener("click", (e) => this._click(e));
     this._root = root;
     this._dlg = this.shadowRoot.getElementById("dlg");
-    this._dlg.addEventListener("close", () => { this._openDev = null; });
   }
 
   connectedCallback() {
@@ -195,6 +194,7 @@ class MgNetworkDashboard extends HTMLElement {
     this._cfg = {
       title: cfg.title ?? "",
       fit_screen: cfg.fit_screen !== false,
+      tabs: !!cfg.tabs,
       variant: [2, "2", "b", "B"].includes(cfg.variant) ? 2 : 1,
       internet: cfg.internet || { download: "sensor.speedtest_download", upload: "sensor.speedtest_upload", ping: "sensor.speedtest_ping" },
       offline: cfg.offline_entity ?? "sensor.unavailable_entities",
@@ -454,46 +454,20 @@ class MgNetworkDashboard extends HTMLElement {
     return out.join("");
   }
 
-  // ---- Variante 1: Kacheln wie bei den Räumen, Details im Fenster ----------------
-  _tile(d) {
-    const st = this._devStatus(d), bad = this._devBad(d);
-    const sub = (d.meters || []).filter((m) => m.ring).map((m) => {
-      const v = this._num(m.entity);
-      return `<span><b>${v == null ? "–" : fmtNum(v, m.decimals ?? 0)}</b> ${esc(this._unit(m))}</span>`;
-    }).join('<i class="dot"></i>');
-    const chips = (d.chips || []).filter((c) => !c.toggle && c.dialog !== "qr").map((c) => {
-      const { txt, tone } = this._chipVal(c);
-      const cls = tone === "bad" ? "al" : tone === "warn" ? "on" : tone === "ok" ? "soft" : "";
-      const cc = tone === "bad" ? C.red : tone === "warn" ? C.orange : tone === "ok" ? C.green : C.dim;
-      return `<button class="sc ${cls} ${tone === "na" ? "na" : ""}" style="--cc:${cc}" data-act="more" data-e="${esc(c.entity)}" title="${esc(c.name + ": " + txt)}" aria-label="${esc(c.name + ": " + txt)}">
-        <ha-icon icon="${esc(c.icon || "mdi:information-outline")}"></ha-icon>${tone === "bad" || tone === "warn" ? `<span>${esc(txt)}</span>` : ""}</button>`;
-    }).join("");
-    const ctl = (d.chips || []).filter((c) => c.toggle || c.dialog === "qr").map((c) => {
-      const { txt, tone } = this._chipVal(c);
-      return `<button class="cb ${tone === "ok" ? "on" : ""}" style="--cc:${C.cyan}" data-act="${c.toggle ? "toggle" : "qr"}" data-e="${esc(c.entity)}">
-        <ha-icon icon="${esc(c.icon || "mdi:power")}"></ha-icon><span>${esc(c.name)}${c.toggle ? " · " + esc(txt) : ""}</span></button>`;
-    }).join("");
-    const meters = (d.meters || []).map((m) => this._meter(m, true)).join("");
-    return `<div class="rt ${bad ? "alert" : ""}" data-act="dev" data-id="${esc(d.id)}">
-      <div class="rtop"><span class="rico"><ha-icon icon="${esc(d.icon || "mdi:server")}"></ha-icon></span>
-        <span class="rtx"><span class="rname">${esc(d.name)}</span><span class="rsub">${sub || esc(d.sub || "")}</span></span>
-        ${st.txt ? `<span class="pill t-${st.tone}"><i></i>${esc(st.txt)}</span>` : ""}<span class="rgo"><ha-icon icon="mdi:chevron-right"></ha-icon></span></div>
-      ${meters ? `<div class="meters tm">${meters}</div>` : ""}
-      ${chips ? `<div class="rsens">${chips}</div>` : ""}
-      ${ctl ? `<div class="rctl">${ctl}</div>` : ""}
-    </div>`;
-  }
-
-  _panel(d) {
+  // ---- Variante 1: drei Geräte nebeneinander wie in der alten Karte ---------------
+  _panel(d, kids = []) {
     const st = this._devStatus(d);
+    const photo = d.image ? `<div class="photo"><img src="${esc(d.image)}" alt="" onerror="this.parentNode.remove()"></div>` : "";
+    const sub = kids.map((k) => `<div class="subp"><div class="subh"><ha-icon icon="${esc(k.icon || "mdi:printer")}"></ha-icon>${esc(k.name)}<span>${esc(k.sub || "")}</span></div>${this._body(k)}</div>`).join("");
     return `<section class="panel dev" id="p-${esc(d.id)}">
       <div class="hd">${this._avatar(d)}<div class="rtx"><div class="ttl">${esc(d.name)}</div><div class="rsub">${esc(d.sub || "")}</div></div>
-      ${st.txt ? `<span class="pill t-${st.tone}"><i></i>${esc(st.txt)}</span>` : ""}</div>${this._body(d)}</section>`;
+      ${st.txt ? `<span class="pill t-${st.tone}"><i></i>${esc(st.txt)}</span>` : ""}</div>${photo}${this._body(d)}${sub}</section>`;
   }
 
   _v1(devs) {
-    if (devs.length === 1) return `<div class="v1one">${this._panel(devs[0])}</div>`;
-    return `<div class="rgrid">${devs.map((d) => this._tile(d)).join("")}</div>`;
+    const all = this._cfg.devices;
+    const top = devs.filter((d) => !d.parent || !all.some((x) => x.id === d.parent));
+    return `<div class="grid3">${top.map((d) => `<div class="col">${this._panel(d, all.filter((k) => k.parent === d.id))}</div>`).join("")}</div>`;
   }
 
   // ---- Variante 2: Übersicht mit aufklappbaren Geräten --------------------------
@@ -527,33 +501,17 @@ class MgNetworkDashboard extends HTMLElement {
     if (!this._cfg || !this._hass) return;
     const old = this._root.querySelector(".wrap");
     const sc = this._root.querySelector(".rbody")?.scrollTop || 0;
+    const tabs = this._cfg.variant === 2 || this._cfg.tabs;
+    if (!tabs) this._tab = "all";
     const devs = this._tab === "all" ? this._cfg.devices : this._cfg.devices.filter((d) => d.id === this._tab);
     const body = this._cfg.variant === 2 ? this._v2(devs) : this._v1(devs);
-    this._root.innerHTML = `<div class="${old?.className || "wrap"}" style="${old?.getAttribute("style") || ""}">
+    this._root.innerHTML = `<div class="${(old?.className || "wrap").replace(/\s*big/, "")}${this._cfg.variant === 1 ? " big" : ""}" style="${old?.getAttribute("style") || ""}">
       ${this._cfg.title ? `<div class="top"><div class="ttl big">${esc(this._cfg.title)}</div></div>` : ""}
-      <div class="rhead"><div class="rtabs">${this._tabs()}</div><div class="csum">${this._summary()}</div></div>
+      <div class="rhead">${tabs ? `<div class="rtabs">${this._tabs()}</div>` : ""}<div class="csum">${this._summary()}</div></div>
       <div class="rbody">${body}</div></div>`;
     const nb = this._root.querySelector(".rbody");
     if (nb) nb.scrollTop = sc;
-    this._refreshDlg();
     requestAnimationFrame(() => this._fit());
-  }
-
-  _devDialog(id) {
-    const d = this._cfg.devices.find((x) => x.id === id);
-    if (!d) return;
-    this._dialog(d.icon || "mdi:server", d.name, d.sub || "", this._body(d));
-    this._openDev = id;
-  }
-
-  _refreshDlg() {
-    if (!this._openDev || !this._dlg.open) return;
-    const d = this._cfg.devices.find((x) => x.id === this._openDev);
-    const b = this.shadowRoot.getElementById("dbody");
-    if (!d || !b) return;
-    const s = b.scrollTop;
-    b.innerHTML = this._body(d);
-    b.scrollTop = s;
   }
 
   // ---- Interaktion ---------------------------------------------------------------
@@ -572,7 +530,6 @@ class MgNetworkDashboard extends HTMLElement {
       try { if (this._cfg.remember_tab !== false) localStorage.setItem("mg-network-tab", this._tab); } catch (x) { /* ohne Speicher */ }
       this._render();
     }
-    else if (act === "dev") this._devDialog(el.dataset.id);
     else if (act === "qr") this._dialog("mdi:qrcode-scan", this._st(ent)?.attributes?.friendly_name || "QR-Code", "Zum Verbinden scannen",
       `<div class="qr">${this._st(ent)?.attributes?.entity_picture ? `<img src="${esc(this._st(ent).attributes.entity_picture)}" alt="QR-Code">` : '<div class="empty">Kein Bild verfügbar</div>'}</div>`);
     else if (act === "rssi") this._rssiDialog();
@@ -580,7 +537,6 @@ class MgNetworkDashboard extends HTMLElement {
 
   _dialog(icon, name, sub, html) {
     const r = this.shadowRoot;
-    this._openDev = null;
     r.getElementById("dicon").setAttribute("icon", icon);
     r.getElementById("dname").textContent = name;
     r.getElementById("dsub").textContent = sub;
@@ -775,6 +731,32 @@ ha-icon{--mdc-icon-size:20px;display:inline-flex}
 .cb.on{background:color-mix(in srgb,var(--cc) 17%,transparent);border-color:color-mix(in srgb,var(--cc) 55%,transparent);color:var(--text)}
 .cb.on ha-icon{color:var(--cc)}
 .rows.one{grid-template-columns:1fr;max-width:760px}
+
+/* Variante 1: groß, drei Spalten */
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:start}
+.big .panel{padding:24px}
+.big .hd{min-height:64px;gap:16px;margin-bottom:16px}
+.big .av{width:60px;height:60px;border-radius:20px}.big .av ha-icon{--mdc-icon-size:30px}
+.big .ttl{font-size:19px}.big .rsub{font-size:15px}
+.big .pill{height:36px;font-size:15px;padding:0 14px}
+.photo{height:150px;margin:0 0 18px;border-radius:22px;background:radial-gradient(90% 90% at 50% 40%,rgba(255,255,255,.07),rgba(255,255,255,.015));border:1px solid var(--line);display:grid;place-items:center;overflow:hidden}
+.photo img{max-width:92%;max-height:92%;object-fit:contain;filter:drop-shadow(0 8px 14px rgba(0,0,0,.5))}
+.big .meters{gap:6px;margin-bottom:18px}
+.big .mt{grid-template-columns:26px 92px minmax(0,1fr) auto;min-height:46px;gap:12px}
+.big .mt ha-icon{--mdc-icon-size:22px}.big .mn{font-size:16px}
+.big .mbar{height:14px;border-radius:8px}.big .mbar span{border-radius:8px}
+.big .mt b{font-size:18px;min-width:90px}.big .mt small{font-size:13px}
+.big .chips{gap:10px;margin-bottom:18px}
+.big .chip2{padding:12px 14px;border-radius:20px;gap:12px}
+.big .ci{width:42px;height:42px}.big .ci ha-icon{--mdc-icon-size:22px}
+.big .ct i{font-size:12.5px}.big .ct b{font-size:17px}
+.big .chart{padding:14px 16px 10px;border-radius:22px}.big .cv{height:130px}
+.big .cax{font-size:12px}.big .clg{font-size:14px}
+.big .xrow{padding:12px 14px}.big .xi{width:40px;height:40px}.big .xt i{font-size:12.5px}.big .xt b{font-size:17px}
+.subp{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+.subh{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:16px}
+.subh span{margin-left:auto;font-size:13px;letter-spacing:0;text-transform:none;font-weight:500;color:var(--dim)}
+@container (max-width:1000px){.grid3{grid-template-columns:1fr}}
 
 /* Fensterhöhe (fit_screen) */
 .wrap.fit{height:var(--fit-h);min-height:0;display:flex;flex-direction:column;overflow:hidden;padding-top:12px;padding-bottom:14px}
