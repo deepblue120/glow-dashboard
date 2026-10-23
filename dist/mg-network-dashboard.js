@@ -10,7 +10,8 @@
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
+const FONT_FILE = "/local/glow-dashboard/Outfit.woff2";   // Schrift „Outfit“ (SIL OFL 1.1) liegt lokal neben den Karten
 
 const C = {
   gold: "#f7b733", cyan: "#38bdf8", green: "#34d399", violet: "#a78bfa",
@@ -146,6 +147,41 @@ class MgNetworkDashboard extends HTMLElement {
     this.shadowRoot.addEventListener("click", (e) => this._click(e));
     this._root = root;
     this._dlg = this.shadowRoot.getElementById("dlg");
+    this._dlg.addEventListener("close", () => { this._openDev = null; });
+  }
+
+  connectedCallback() {
+    if (!this._onResize) {
+      this._onResize = () => { cancelAnimationFrame(this._fitRaf); this._fitRaf = requestAnimationFrame(() => this._fit()); };
+      this._ro = new ResizeObserver(this._onResize);
+    }
+    window.addEventListener("resize", this._onResize);
+    this._ro.observe(this);
+    this._onResize();
+  }
+  disconnectedCallback() {
+    if (this._onResize) { window.removeEventListener("resize", this._onResize); this._ro.disconnect(); }
+  }
+
+  // Desktop/Laptop: Karte passt sich der Fensterhöhe an, der Inhalt scrollt in der Karte
+  _fit() {
+    const wrap = this._root.querySelector(".wrap");
+    if (!wrap) return;
+    const on = this._cfg?.fit_screen && this.clientWidth > 1180;
+    if (!on) { wrap.classList.remove("fit"); return; }
+    const top = this.getBoundingClientRect().top + window.scrollY;
+    wrap.style.setProperty("--fit-h", Math.max(560, Math.floor(window.innerHeight - top)) + "px");
+    wrap.classList.add("fit");
+  }
+
+  // @font-face wirkt nicht im Shadow DOM, deshalb einmalig in den Seitenkopf (entfällt, wenn eine andere Karte „Outfit“ schon einbindet)
+  _ensureFont(url) {
+    const font = url || FONT_FILE;
+    if (!font || ["mg-car-font", "mg-tablet-font", "glow-energy-font", "mg-rooms-font", "mg-network-font"].some((id) => document.getElementById(id))) return;
+    const f = document.createElement("style");
+    f.id = "mg-network-font";
+    f.textContent = `@font-face{font-family:"Outfit";font-style:normal;font-display:swap;font-weight:100 900;src:url("${font}") format("woff2")}`;
+    document.head.appendChild(f);
   }
 
   static getStubConfig() { return { variant: 1 }; }
@@ -157,7 +193,8 @@ class MgNetworkDashboard extends HTMLElement {
     const hide = cfg.hide || [];
     devices = devices.filter((d) => !hide.includes(d.id));
     this._cfg = {
-      title: cfg.title ?? "Netzwerk",
+      title: cfg.title ?? "",
+      fit_screen: cfg.fit_screen !== false,
       variant: [2, "2", "b", "B"].includes(cfg.variant) ? 2 : 1,
       internet: cfg.internet || { download: "sensor.speedtest_download", upload: "sensor.speedtest_upload", ping: "sensor.speedtest_ping" },
       offline: cfg.offline_entity ?? "sensor.unavailable_entities",
@@ -165,6 +202,12 @@ class MgNetworkDashboard extends HTMLElement {
     };
     this._sig = "";
     this._ui = { open: devices[0]?.id ?? null, exp: {} };
+    this._ensureFont(cfg.font_url);
+    if (this._tab == null || !(this._tab === "all" || devices.some((d) => d.id === this._tab))) {
+      let saved = null;
+      try { saved = cfg.remember_tab === false ? null : localStorage.getItem("mg-network-tab"); } catch (e) { /* ohne Speicher */ }
+      this._tab = saved === "all" || devices.some((d) => d.id === saved) ? saved : "all";
+    }
     if (this._hass) this._render();
   }
 
@@ -281,22 +324,23 @@ class MgNetworkDashboard extends HTMLElement {
   }
 
   // ---- Bausteine -----------------------------------------------------------
-  _meter(m) {
+  _meter(m, plain) {
     const v = this._num(m.entity), max = m.max || 100;
     const p = v == null ? 0 : Math.max(0, Math.min(100, (v / max) * 100));
     const col = this._tone(m, v);
-    return `<button class="mt" data-act="more" data-e="${esc(m.entity)}">
+    const tag = plain ? "div" : "button", at = plain ? "" : ` data-act="more" data-e="${esc(m.entity)}"`;
+    return `<${tag} class="mt${plain ? " plain" : ""}"${at}>
       <ha-icon icon="${esc(m.icon || "mdi:gauge")}"></ha-icon><span class="mn">${esc(m.name)}</span>
       <span class="mbar"><span style="width:${p.toFixed(1)}%;background:${col};box-shadow:0 0 10px ${col}66"></span></span>
-      <b>${v == null ? "–" : fmtNum(v, m.decimals ?? 0)}<small>${esc(this._unit(m))}</small></b></button>`;
+      <b>${v == null ? "–" : fmtNum(v, m.decimals ?? 0)}<small>${esc(this._unit(m))}</small></b></${tag}>`;
   }
 
   _ring(m) {
     const v = this._num(m.entity), max = m.max || 100, R = 22, L = 2 * Math.PI * R;
     const p = v == null ? 0 : Math.max(0, Math.min(1, v / max)), col = this._tone(m, v);
     return `<button class="ring" data-act="more" data-e="${esc(m.entity)}">
-      <span class="rg"><svg viewBox="0 0 56 56"><circle class="rt" cx="28" cy="28" r="${R}"/>
-      <circle class="rv" cx="28" cy="28" r="${R}" stroke="${col}" stroke-dasharray="${(p * L).toFixed(1)} ${L.toFixed(1)}" transform="rotate(-90 28 28)"/></svg>
+      <span class="rg"><svg viewBox="0 0 56 56"><circle class="rgt" cx="28" cy="28" r="${R}"/>
+      <circle class="rgv" cx="28" cy="28" r="${R}" stroke="${col}" stroke-dasharray="${(p * L).toFixed(1)} ${L.toFixed(1)}" transform="rotate(-90 28 28)"/></svg>
       <b>${v == null ? "–" : fmtNum(v, m.decimals ?? 0)}<small>${esc(this._unit(m))}</small></b></span><i>${esc(m.name)}</i></button>`;
   }
 
@@ -378,13 +422,6 @@ class MgNetworkDashboard extends HTMLElement {
     return `<div class="av"><ha-icon icon="${esc(d.icon || "mdi:server")}"></ha-icon>${d.image ? `<img src="${esc(d.image)}" alt="" onerror="this.remove()">` : ""}</div>`;
   }
 
-  _banner() {
-    const p = this._problems();
-    if (!p.length) return `<div class="banner ok"><ha-icon icon="mdi:check-circle-outline"></ha-icon><b>Alles in Ordnung</b><span>Alle Geräte und Sensoren sind online</span></div>`;
-    return `<div class="banner warn"><ha-icon icon="mdi:alert-circle-outline"></ha-icon><b>${p.length} ${p.length === 1 ? "Hinweis" : "Hinweise"}</b>
-      <span class="plist">${p.slice(0, 6).map((x) => `<button data-act="more" data-e="${esc(x.e)}" class="${x.warn ? "w" : ""}">${esc(x.txt)}</button>`).join("")}</span></div>`;
-  }
-
   _body(d) {
     const meters = (d.meters || []).map((m) => this._meter(m)).join("");
     const chips = (d.chips || []).map((c) => this._chip(c)).join("");
@@ -392,22 +429,75 @@ class MgNetworkDashboard extends HTMLElement {
     return `${meters ? `<div class="meters">${meters}</div>` : ""}${chips ? `<div class="chips">${chips}</div>` : ""}${this._chart(d)}${extras ? `<div class="extras">${extras}</div>` : ""}`;
   }
 
-  // ---- Variante 1: Geräte-Kacheln ---------------------------------------------
-  _v1() {
-    const panels = this._cfg.devices.map((d) => {
-      const st = this._devStatus(d);
-      return `<section class="panel dev" id="p-${esc(d.id)}">
-        <div class="hd">${this._avatar(d)}<div class="rtx"><div class="ttl">${esc(d.name)}</div><div class="rsub">${esc(d.sub || "")}</div></div>
-        ${st.txt ? `<span class="pill t-${st.tone}"><i></i>${esc(st.txt)}</span>` : ""}</div>${this._body(d)}</section>`;
-    });
-    // Drucker (kleine Kachel) unter das NAS stellen: Spalten nach Reihenfolge verteilen
-    const cols = [[], [], []];
-    this._cfg.devices.forEach((d, i) => cols[d.id === "printer" ? 1 : Math.min(i, 2)].push(panels[i]));
-    return `${this._banner()}<div class="grid">${cols.map((c) => `<div class="col">${c.join("")}</div>`).join("")}</div>`;
+  _devBad(d) {
+    return (d.chips || []).some((c) => ["bad", "warn"].includes(this._chipVal(c).tone))
+      || (d.meters || []).some((m) => { const v = this._num(m.entity); return v != null && this._tone(m, v) === C.red; });
+  }
+
+  // ---- Kopfzeile: Reiter + Hinweis-Chips (wie bei den Räumen) -------------------
+  _tabs() {
+    const tabs = [["all", "mdi:lan", "Alle"], ...this._cfg.devices.map((d) => [d.id, d.icon, d.short || d.name])];
+    return tabs.map(([id, ic, name]) => {
+      const bad = id !== "all" && this._devBad(this._cfg.devices.find((d) => d.id === id));
+      return `<button class="rtab ${this._tab === id ? "sel" : ""}" data-act="tab" data-v="${esc(id)}"><ha-icon icon="${esc(ic || "mdi:server")}"></ha-icon><span>${esc(name)}</span>${bad ? '<i class="tdot red"></i>' : ""}</button>`;
+    }).join("");
+  }
+
+  _summary() {
+    const p = this._problems(), I = this._cfg.internet;
+    const chip = (c, i, t, e) => `<button class="sumchip" style="--c:${c}"${e ? ` data-act="more" data-e="${esc(e)}"` : ""}><ha-icon icon="${i}"></ha-icon>${t}</button>`;
+    const out = [p.length ? chip(C.red, "mdi:alert-circle-outline", `${p.length} ${p.length === 1 ? "Hinweis" : "Hinweise"}`, p[0].e) : chip(C.green, "mdi:check-circle-outline", "Alles OK")];
+    if (this._cfg.variant === 1) {
+      const num = (e, u, ic, c) => { const v = this._num(e); if (v != null) out.push(chip(c, ic, `${fmtNum(v, 0)} ${u}`, e)); };
+      num(I.download, "Mbit/s", "mdi:download", C.cyan); num(I.upload, "Mbit/s", "mdi:upload", C.green); num(I.ping, "ms", "mdi:speedometer", C.gold);
+    }
+    return out.join("");
+  }
+
+  // ---- Variante 1: Kacheln wie bei den Räumen, Details im Fenster ----------------
+  _tile(d) {
+    const st = this._devStatus(d), bad = this._devBad(d);
+    const sub = (d.meters || []).filter((m) => m.ring).map((m) => {
+      const v = this._num(m.entity);
+      return `<span><b>${v == null ? "–" : fmtNum(v, m.decimals ?? 0)}</b> ${esc(this._unit(m))}</span>`;
+    }).join('<i class="dot"></i>');
+    const chips = (d.chips || []).filter((c) => !c.toggle && c.dialog !== "qr").map((c) => {
+      const { txt, tone } = this._chipVal(c);
+      const cls = tone === "bad" ? "al" : tone === "warn" ? "on" : tone === "ok" ? "soft" : "";
+      const cc = tone === "bad" ? C.red : tone === "warn" ? C.orange : tone === "ok" ? C.green : C.dim;
+      return `<button class="sc ${cls} ${tone === "na" ? "na" : ""}" style="--cc:${cc}" data-act="more" data-e="${esc(c.entity)}" title="${esc(c.name + ": " + txt)}" aria-label="${esc(c.name + ": " + txt)}">
+        <ha-icon icon="${esc(c.icon || "mdi:information-outline")}"></ha-icon>${tone === "bad" || tone === "warn" ? `<span>${esc(txt)}</span>` : ""}</button>`;
+    }).join("");
+    const ctl = (d.chips || []).filter((c) => c.toggle || c.dialog === "qr").map((c) => {
+      const { txt, tone } = this._chipVal(c);
+      return `<button class="cb ${tone === "ok" ? "on" : ""}" style="--cc:${C.cyan}" data-act="${c.toggle ? "toggle" : "qr"}" data-e="${esc(c.entity)}">
+        <ha-icon icon="${esc(c.icon || "mdi:power")}"></ha-icon><span>${esc(c.name)}${c.toggle ? " · " + esc(txt) : ""}</span></button>`;
+    }).join("");
+    const meters = (d.meters || []).map((m) => this._meter(m, true)).join("");
+    return `<div class="rt ${bad ? "alert" : ""}" data-act="dev" data-id="${esc(d.id)}">
+      <div class="rtop"><span class="rico"><ha-icon icon="${esc(d.icon || "mdi:server")}"></ha-icon></span>
+        <span class="rtx"><span class="rname">${esc(d.name)}</span><span class="rsub">${sub || esc(d.sub || "")}</span></span>
+        ${st.txt ? `<span class="pill t-${st.tone}"><i></i>${esc(st.txt)}</span>` : ""}<span class="rgo"><ha-icon icon="mdi:chevron-right"></ha-icon></span></div>
+      ${meters ? `<div class="meters tm">${meters}</div>` : ""}
+      ${chips ? `<div class="rsens">${chips}</div>` : ""}
+      ${ctl ? `<div class="rctl">${ctl}</div>` : ""}
+    </div>`;
+  }
+
+  _panel(d) {
+    const st = this._devStatus(d);
+    return `<section class="panel dev" id="p-${esc(d.id)}">
+      <div class="hd">${this._avatar(d)}<div class="rtx"><div class="ttl">${esc(d.name)}</div><div class="rsub">${esc(d.sub || "")}</div></div>
+      ${st.txt ? `<span class="pill t-${st.tone}"><i></i>${esc(st.txt)}</span>` : ""}</div>${this._body(d)}</section>`;
+  }
+
+  _v1(devs) {
+    if (devs.length === 1) return `<div class="v1one">${this._panel(devs[0])}</div>`;
+    return `<div class="rgrid">${devs.map((d) => this._tile(d)).join("")}</div>`;
   }
 
   // ---- Variante 2: Übersicht mit aufklappbaren Geräten --------------------------
-  _v2() {
+  _v2(devs) {
     const I = this._cfg.internet;
     const kpi = (e, label, icon, col, max, dec) => {
       const v = this._num(e), s = this._st(e), u = s?.attributes?.unit_of_measurement || "";
@@ -422,21 +512,48 @@ class MgNetworkDashboard extends HTMLElement {
       : `<div class="hl ok"><ha-icon icon="mdi:check-circle-outline"></ha-icon><div><b>Alles in Ordnung</b><span class="hs">${this._cfg.devices.length} Geräte online</span></div></div>`;
     const hero = `<section class="panel hero"><div class="hd"><div class="ttl">Internet</div></div>
       <div class="kpis">${kpi(I.download, "Download", "mdi:download", C.cyan, 1000, 0)}${kpi(I.upload, "Upload", "mdi:upload", C.green, 100, 0)}${kpi(I.ping, "Ping", "mdi:speedometer", C.gold, 100, 0)}</div>${health}</section>`;
-    const rows = this._cfg.devices.map((d) => {
-      const st = this._devStatus(d), open = this._ui.open === d.id;
+    const rows = devs.map((d) => {
+      const st = this._devStatus(d), open = this._ui.open === d.id || devs.length === 1;
       const rings = (d.meters || []).filter((m) => m.ring).map((m) => this._ring(m)).join("");
       return `<section class="panel drow${open ? " open" : ""}"><button class="dh" data-act="open" data-k="${esc(d.id)}" aria-expanded="${open}">
         ${this._avatar(d)}<div class="rtx"><div class="ttl">${esc(d.name)}</div><div class="rsub">${esc(d.sub || "")}</div></div>
         ${st.txt ? `<span class="pill t-${st.tone}"><i></i>${esc(st.txt)}</span>` : ""}<ha-icon class="xa" icon="mdi:chevron-${open ? "up" : "down"}"></ha-icon></button>
         ${rings ? `<div class="rings">${rings}</div>` : ""}${open ? `<div class="dd">${this._body({ ...d, meters: (d.meters || []).filter((m) => !m.ring) })}</div>` : ""}</section>`;
     }).join("");
-    return `<div class="v2">${hero}<div class="rows">${rows}</div></div>`;
+    return `<div class="v2">${this._tab === "all" ? hero : ""}<div class="rows${devs.length === 1 ? " one" : ""}">${rows}</div></div>`;
   }
 
   _render() {
     if (!this._cfg || !this._hass) return;
-    const v = this._cfg.variant === 2 ? this._v2() : this._v1();
-    this._root.innerHTML = `<div class="wrap"><div class="top"><div class="ttl big">${esc(this._cfg.title)}</div></div>${v}</div>`;
+    const old = this._root.querySelector(".wrap");
+    const sc = this._root.querySelector(".rbody")?.scrollTop || 0;
+    const devs = this._tab === "all" ? this._cfg.devices : this._cfg.devices.filter((d) => d.id === this._tab);
+    const body = this._cfg.variant === 2 ? this._v2(devs) : this._v1(devs);
+    this._root.innerHTML = `<div class="${old?.className || "wrap"}" style="${old?.getAttribute("style") || ""}">
+      ${this._cfg.title ? `<div class="top"><div class="ttl big">${esc(this._cfg.title)}</div></div>` : ""}
+      <div class="rhead"><div class="rtabs">${this._tabs()}</div><div class="csum">${this._summary()}</div></div>
+      <div class="rbody">${body}</div></div>`;
+    const nb = this._root.querySelector(".rbody");
+    if (nb) nb.scrollTop = sc;
+    this._refreshDlg();
+    requestAnimationFrame(() => this._fit());
+  }
+
+  _devDialog(id) {
+    const d = this._cfg.devices.find((x) => x.id === id);
+    if (!d) return;
+    this._dialog(d.icon || "mdi:server", d.name, d.sub || "", this._body(d));
+    this._openDev = id;
+  }
+
+  _refreshDlg() {
+    if (!this._openDev || !this._dlg.open) return;
+    const d = this._cfg.devices.find((x) => x.id === this._openDev);
+    const b = this.shadowRoot.getElementById("dbody");
+    if (!d || !b) return;
+    const s = b.scrollTop;
+    b.innerHTML = this._body(d);
+    b.scrollTop = s;
   }
 
   // ---- Interaktion ---------------------------------------------------------------
@@ -450,6 +567,12 @@ class MgNetworkDashboard extends HTMLElement {
     else if (act === "open") { this._ui.open = this._ui.open === el.dataset.k ? null : el.dataset.k; this._render(); }
     else if (act === "exp") { this._ui.exp[el.dataset.k] = !this._ui.exp[el.dataset.k]; this._render(); }
     else if (act === "close") this._dlg.close();
+    else if (act === "tab") {
+      this._tab = el.dataset.v;
+      try { if (this._cfg.remember_tab !== false) localStorage.setItem("mg-network-tab", this._tab); } catch (x) { /* ohne Speicher */ }
+      this._render();
+    }
+    else if (act === "dev") this._devDialog(el.dataset.id);
     else if (act === "qr") this._dialog("mdi:qrcode-scan", this._st(ent)?.attributes?.friendly_name || "QR-Code", "Zum Verbinden scannen",
       `<div class="qr">${this._st(ent)?.attributes?.entity_picture ? `<img src="${esc(this._st(ent).attributes.entity_picture)}" alt="QR-Code">` : '<div class="empty">Kein Bild verfügbar</div>'}</div>`);
     else if (act === "rssi") this._rssiDialog();
@@ -457,6 +580,7 @@ class MgNetworkDashboard extends HTMLElement {
 
   _dialog(icon, name, sub, html) {
     const r = this.shadowRoot;
+    this._openDev = null;
     r.getElementById("dicon").setAttribute("icon", icon);
     r.getElementById("dname").textContent = name;
     r.getElementById("dsub").textContent = sub;
@@ -597,12 +721,65 @@ ha-icon{--mdc-icon-size:20px;display:inline-flex}
 .ring:hover{background:rgba(255,255,255,.03)}
 .rg{position:relative;width:76px;height:76px;display:grid;place-items:center}
 .rg svg{position:absolute;inset:0;width:100%;height:100%}
-.rt{fill:none;stroke:rgba(255,255,255,.07);stroke-width:5}
-.rv{fill:none;stroke-width:5;stroke-linecap:round;filter:drop-shadow(0 0 4px currentColor);transition:stroke-dasharray .6s}
+.rgt{fill:none;stroke:rgba(255,255,255,.07);stroke-width:5}
+.rgv{fill:none;stroke-width:5;stroke-linecap:round;filter:drop-shadow(0 0 4px currentColor);transition:stroke-dasharray .6s}
 .rg b{position:relative;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
 .rg small{font-size:10.5px;color:var(--muted);margin-left:1px;font-weight:500}
 .ring i{font-style:normal;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .dd{padding:6px 22px 20px;border-top:1px solid var(--line);margin-top:2px;padding-top:16px}
+
+/* Kopfzeile: Reiter + Chips */
+.rhead{display:flex;align-items:center;gap:14px;margin:0 2px 16px;flex-wrap:wrap}
+.rtabs{display:flex;gap:4px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:18px;padding:4px;flex-wrap:wrap}
+.rtab{position:relative;height:40px;padding:0 16px 0 13px;border-radius:14px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--muted);white-space:nowrap}
+.rtab ha-icon{--mdc-icon-size:18px}
+.rtab:hover{color:var(--text)}
+.rtab.sel{background:rgba(255,255,255,.08);color:var(--text)}
+.rtab.sel ha-icon{color:var(--gold)}
+.tdot{position:absolute;top:8px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold)}
+.tdot.red{background:var(--red);box-shadow:0 0 8px var(--red)}
+.csum{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.sumchip{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:14px;background:color-mix(in srgb,var(--c) 10%,transparent);border:1px solid color-mix(in srgb,var(--c) 25%,transparent);font-size:14px;font-weight:600;color:var(--c)}
+.sumchip ha-icon{--mdc-icon-size:16px}
+
+/* Kacheln (Variante 1) */
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:16px}
+.v1one{max-width:620px}
+.rt{container-type:inline-size;position:relative;border-radius:26px;background:linear-gradient(180deg,#161920,#12151b);border:1px solid var(--line);padding:16px 16px 14px;display:flex;flex-direction:column;gap:12px;cursor:pointer;min-width:0;transition:border-color .25s,box-shadow .25s}
+.rt:hover{border-color:rgba(255,255,255,.12)}
+.rt.alert{border-color:rgba(248,113,113,.65);box-shadow:0 0 24px rgba(248,113,113,.16)}
+.rtop{display:flex;align-items:center;gap:14px;min-width:0}
+.rico{width:52px;height:52px;border-radius:17px;background:rgba(56,189,248,.12);display:grid;place-items:center;color:var(--cyan);flex:none}
+.rico ha-icon{--mdc-icon-size:28px}
+.rt.alert .rico{color:var(--red);background:rgba(248,113,113,.12)}
+.rname{font-size:18px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt .rsub{display:flex;align-items:center;gap:7px;font-size:13.5px;overflow:hidden;font-variant-numeric:tabular-nums}
+.rt .rsub b{color:rgba(243,245,249,.9);font-weight:600}
+.rsub .dot{width:3px;height:3px;border-radius:50%;background:var(--dim);flex:none}
+.rgo{color:var(--dim);flex:none;display:grid;place-items:center}
+.rt:hover .rgo{color:var(--text)}
+.meters.tm{margin:0;gap:2px}
+.mt.plain{cursor:inherit}.mt.plain:hover{background:none}
+.rsens{display:flex;gap:6px;flex-wrap:wrap}
+.sc{height:30px;min-width:34px;padding:0 8px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:rgba(255,255,255,.035);color:var(--dim);font-size:12.5px;font-weight:700}
+.sc ha-icon{--mdc-icon-size:17px}
+.sc.soft{color:color-mix(in srgb,var(--cc) 80%,transparent)}
+.sc.on{color:var(--cc);background:color-mix(in srgb,var(--cc) 14%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cc) 30%,transparent)}
+.sc.al{color:#0f1116;background:var(--cc);box-shadow:0 0 14px color-mix(in srgb,var(--cc) 55%,transparent)}
+.sc.na{opacity:.45}
+.rctl{display:flex;gap:8px;flex-wrap:wrap}
+.cb{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 14px 0 12px;border-radius:15px;background:rgba(255,255,255,.045);border:1px solid var(--line);font-size:14px;font-weight:600;color:var(--muted);min-width:0;max-width:100%}
+.cb span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb ha-icon{--mdc-icon-size:20px;flex:none}
+.cb:hover{background:rgba(255,255,255,.07);color:var(--text)}
+.cb.on{background:color-mix(in srgb,var(--cc) 17%,transparent);border-color:color-mix(in srgb,var(--cc) 55%,transparent);color:var(--text)}
+.cb.on ha-icon{color:var(--cc)}
+.rows.one{grid-template-columns:1fr;max-width:760px}
+
+/* Fensterhöhe (fit_screen) */
+.wrap.fit{height:var(--fit-h);min-height:0;display:flex;flex-direction:column;overflow:hidden;padding-top:12px;padding-bottom:14px}
+.wrap.fit .rhead{flex:none}
+.wrap.fit .rbody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;padding-right:4px;margin-right:-6px}
 
 /* Fenster */
 .dlg{outline:none;padding:0;border:0;background:transparent;max-width:min(560px,calc(100vw - 32px));width:100%;max-height:calc(100vh - 48px);overflow:visible;color:var(--text);font-family:inherit}
@@ -622,17 +799,18 @@ ha-icon{--mdc-icon-size:20px;display:inline-flex}
 }
 @container (max-width:720px){
   .wrap{padding:12px}
-  .grid{grid-template-columns:1fr;gap:14px}.grid .col:nth-child(3){grid-column:auto}.col{gap:14px}
+  .rgrid{grid-template-columns:1fr;gap:12px}.rhead .csum{margin-left:0}
+  .rtabs{width:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.rtab{padding:0 12px 0 10px}
   .panel{border-radius:24px;padding:16px}
   .dh{padding:14px 16px}.rings{padding:0 12px 14px}.dd{padding:14px 16px 16px}
   .kpis{grid-template-columns:1fr 1fr 1fr;gap:8px}.kpi{padding:10px 12px}.kpi b{font-size:26px}
   .chips{grid-template-columns:1fr 1fr}
 }
-@media (prefers-reduced-motion:reduce){.pill i,.t-bad .ci{animation:none}.mbar span,.rv{transition:none}}
+@media (prefers-reduced-motion:reduce){.pill i,.t-bad .ci{animation:none}.mbar span,.rgv{transition:none}}
 `;
 
 if (!customElements.get("mg-network-dashboard")) customElements.define("mg-network-dashboard", MgNetworkDashboard);
 if (!window.customCards.some((c) => c.type === "mg-network-dashboard")) {
-  window.customCards.push({ type: "mg-network-dashboard", name: "Glow Netzwerk", description: "Server, NAS, UniFi und Drucker im Glow-Stil (2 Layouts)" });
+  window.customCards.push({ type: "mg-network-dashboard", name: "MG Netzwerk", description: "Server, NAS, UniFi und Drucker im Glow-Stil (2 Layouts)" });
 }
 console.info(`%c MG-NETWORK-DASHBOARD %c ${VERSION} `, "background:#38bdf8;color:#0b0d12;font-weight:700", "background:#14171e;color:#f3f5f9");
