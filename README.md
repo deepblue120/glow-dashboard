@@ -240,8 +240,6 @@ car:
 
 | Version | Datei |
 |---------|-------|
-| 2.37.x | mg-home-dashboard.js, mg-climate-dashboard.js, mg-rooms-dashboard.js, mg-school-card.js |
-| 3.5.4  | mg-car-dashboard.js (eigenständig) |
 | 3.5.28 | Auswahllisten einheitlich (Ladeplan-Ziel, Puffer und PV auf Profil & Analyse, Protokoll-Kategorie), Datumsfelder öffnen den Kalender |
 | 3.5.29 | Englische Oberfläche (Sprache aus Home Assistant oder `language`), Schrift „Outfit“ in der Karte enthalten statt von Google geladen |
 | 3.5.30 | Profil & Analyse: Fenster „Autarkie“ mit Autarkiegrad und Ersparnis beim Heimladen gegenüber reinem Netzstrom |
