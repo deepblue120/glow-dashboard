@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=57  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=58  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.31";
+const VERSION = "3.5.32";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -4093,7 +4093,7 @@ const I18N = {
     "Lademanagement": "Charge management",
     "Automatik": "Automatic",
     "Manuell": "Manual",
-    "Lademodus": "Charging mode",
+    "Lademodus": "Mode",
     "evcc-Modus": "evcc mode",
     "Empfehlung": "Recommendation",
     "Laden vor PV sinnvoll": "Charge before PV",
