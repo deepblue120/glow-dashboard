@@ -1,0 +1,153 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;background:#0b0d12}</style></head><body><div id="host"></div>
+<script type="module">
+import "./mdi-icons.js";
+import "../../../dist/mg-car-dashboard.js";
+const Q = new URLSearchParams(location.search);
+const LANG = Q.get("lang") || "de", PAGE = Q.get("p") || "main", CHARGING = Q.get("chg") !== "0";
+// fester Zufall, damit die Bilder reproduzierbar sind
+let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const H = 3600000, D = 24 * H, NOW = Date.now();
+const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+const at = (dAgo, h, m = 0) => day0.getTime() - dAgo * D + h * H + m * 60000;
+
+/* ---------- Ladungen zuhause (evcc-Ladelogbuch), 11 Monate ---------- */
+const sessions = [];
+for (let d = 330; d >= 2; d -= 2 + Math.floor(rnd() * 2)) {
+  const month = new Date(at(d, 0)).getMonth(), summer = [3, 4, 5, 6, 7, 8].includes(month);
+  const midday = rnd() < (summer ? 0.75 : 0.3), start = at(d, midday ? 10 + Math.floor(rnd() * 3) : 18 + Math.floor(rnd() * 3), Math.floor(rnd() * 50));
+  const kwh = Math.round((9 + rnd() * 22) * 10) / 10, pw = midday ? 3.4 + rnd() * 3 : 7.2 + rnd() * 3.8, dur = kwh / pw;
+  const pv = midday ? Math.round(summer ? 70 + rnd() * 30 : 35 + rnd() * 40) : Math.round(rnd() * (summer ? 25 : 8));
+  const price = Math.round(kwh * ((pv / 100) * 0.081 + (1 - pv / 100) * 0.318) * 100) / 100;
+  const s0 = Math.round(18 + rnd() * 30);
+  sessions.push({ created: new Date(start).toISOString(), finished: new Date(start + dur * H).toISOString(), chargedEnergy: kwh, solarPercentage: pv, price, pricePerKWh: Math.round((price / kwh) * 1000) / 1000, chargeDuration: dur * 3600e9, socStart: s0, socEnd: Math.min(100, Math.round(s0 + (kwh / 64) * 100)), vehicle: "" });
+}
+// laufende Ladung (seit 1:52 h, PV-Überschuss)
+const curStart = NOW - (112 * 60000);
+if (CHARGING) sessions.push({ created: new Date(curStart).toISOString(), finished: null, chargedEnergy: 9.6, solarPercentage: 64, price: 1.38, chargeDuration: 1.86 * 3600e9, socStart: 41, socEnd: null, vehicle: "" });
+
+/* ---------- Fremdladungen ---------- */
+const ext = [
+  [3, 14, "EnBW", "DC", 38.6, 0.59, 31, 18, 79], [19, 11, "Ionity", "DC", 52.1, 0.69, 27, 9, 88], [41, 16, "Aldi Süd", "AC", 14.2, 0.29, 95, 34, 56],
+  [63, 9, "Tesla Supercharger", "DC", 44.8, 0.52, 24, 12, 80], [88, 13, "EnBW", "DC", 31.3, 0.59, 22, 26, 75], [121, 18, "Stadtwerke München", "AC", 18.9, 0.45, 160, 40, 69],
+  [176, 10, "Ionity", "DC", 47.5, 0.69, 26, 15, 89], [214, 15, "EnBW", "DC", 29.4, 0.59, 21, 31, 77], [262, 12, "Aldi Süd", "AC", 16.1, 0.29, 110, 38, 63],
+].map(([d, h, anb, ac, kwh, p, min, s0, s1]) => { const ts = at(d, h, 20) / 1000; return { start_ts: ts, erfasst_ts: ts + min * 60 + 600, kwh, preis_kwh: p, kosten: Math.round(kwh * p * 100) / 100, dauer_min: min, soc_start: s0, soc_end: s1, anbieter: anb, ac_dc: ac, startgebuehr: 0, blockiergebuehr: 0, zeitgebuehr: 0 }; });
+
+/* ---------- Fahrtenbuch, 6 Wochen ---------- */
+const trips = []; let odo = 41820;
+const routes = [["Zuhause", "Büro", 24.3], ["Büro", "Zuhause", 24.1], ["Zuhause", "Supermarkt", 4.2], ["Supermarkt", "Zuhause", 4.3], ["Zuhause", "Fitnessstudio", 7.8], ["Fitnessstudio", "Zuhause", 7.9],
+  ["Zuhause", "Eltern", 38.5], ["Eltern", "Zuhause", 38.7], ["Zuhause", "Flughafen", 61.2], ["Zuhause", "Baumarkt", 11.4], ["Baumarkt", "Zuhause", 11.2]];
+for (let d = 42; d >= 0; d--) {
+  const wd = new Date(at(d, 0)).getDay(), list = [];
+  if (wd >= 1 && wd <= 5) list.push([7, routes[0]], [17, routes[1]]);
+  if (rnd() < 0.45) list.push([18 + Math.floor(rnd() * 2), routes[2]], [19 + Math.floor(rnd() * 2), routes[3]]);
+  if (wd === 6 && rnd() < 0.7) list.push([10, routes[6]], [16, routes[7]]);
+  if (wd === 3 || wd === 1) list.push([19, routes[4]], [21, routes[5]]);
+  if (wd === 0 && rnd() < 0.5) list.push([11, routes[9]], [13, routes[10]]);
+  for (const [h, [a, b, km0]] of list) {
+    const t0 = at(d, h, Math.floor(rnd() * 40)), km = Math.round((km0 + (rnd() - 0.5) * 1.4) * 10) / 10, min = Math.round(km * (1.25 + rnd() * 0.5) + 4);
+    if (t0 > NOW - 30 * 60000) continue;
+    const kwh = Math.round(km * (0.15 + rnd() * 0.04) * 10) / 10;
+    trips.push({ erfasst_ts: t0 / 1000 + min * 60 + 30, start_ts: t0 / 1000, end_ts: t0 / 1000 + min * 60, start_ort: a, end_ort: b, km, odo_start: odo, odo_end: Math.round((odo + km) * 10) / 10, verbrauch_kwh: kwh, soc_start: null, soc_end: null });
+    odo = Math.round((odo + km) * 10) / 10;
+  }
+}
+
+/* ---------- Ladeleistung und Ladestand je Stunde (Verlauf) ---------- */
+const sess = sessions.map((s) => ({ a: Date.parse(s.created), b: s.finished ? Date.parse(s.finished) : NOW, kw: s.chargedEnergy / (s.chargeDuration / 3600e9), kwh: s.chargedEnergy }));
+const powerAt = (t) => { const s = sess.find((x) => t >= x.a && t < x.b); return s ? s.kw : 0; };
+// Ladestand: rückwärts von 70 % – Fahrten senken, Ladungen heben
+const socNow = CHARGING ? 56 : 62, cap = 64;
+const socAt = (t) => { let s = socNow; for (const x of sess) { const a = Math.max(t, x.a), b = Math.min(NOW, x.b); if (b > a) s -= ((b - a) / (x.b - x.a)) * x.kwh / cap * 100; }
+  for (const tr of trips) if (tr.start_ts * 1000 > t) s += tr.verbrauch_kwh / cap * 100; return Math.max(5, Math.min(100, s)); };
+const stats = (id, t0, t1) => { const out = []; for (let t = Math.floor(t0 / H) * H; t < t1; t += H) { let m = 0; for (let k = 0; k < 4; k++) m += id === "sensor.mg4_soc" ? socAt(t + k * 15 * 60000) : powerAt(t + k * 15 * 60000); out.push({ start: t, end: t + H, mean: m / 4, max: m / 4 }); } return out; };
+const hist = (id, t0, t1) => { const out = []; for (let t = t0; t <= t1; t += 10 * 60000) out.push({ entity_id: id, state: String(id === "sensor.mg4_soc" ? Math.round(socAt(t)) : Math.round(powerAt(t) * 100) / 100), last_changed: new Date(t).toISOString() }); return out; };
+
+/* ---------- Entitäten ---------- */
+const states = {}, entities = {};
+const add = (key, id, state, attrs = {}) => { states[id] = { entity_id: id, state: String(state), attributes: attrs, last_updated: new Date().toISOString() }; if (key) entities[id] = { entity_id: id, platform: "ev_assistant", translation_key: key, config_entry_id: "e1" }; };
+const plain = (id, state, attrs = {}) => add(null, id, state, attrs);
+const wk = (o) => ({ montag: o[0], dienstag: o[1], mittwoch: o[2], donnerstag: o[3], freitag: o[4], samstag: o[5], sonntag: o[6] });
+plain("sensor.mg4_soc", socNow, { unit_of_measurement: "%", friendly_name: "MG4 Ladestand" });
+plain("sensor.wallbox_power", CHARGING ? 5.84 : 0, { unit_of_measurement: "kW", friendly_name: "Wallbox Ladeleistung" });
+add("usage_profile", "sensor.eva_profil", 8, { ...wk([7.2, 8.1, 6.4, 7.9, 9.8, 12.6, 4.1]), km_je_wochentag: wk([62, 58, 70, 55, 66, 81, 24]) });
+add("usage_profile_tomorrow", "sensor.eva_bedarf", 10.6, { benoetigt_km: 66, puffer_art: "km", puffer_km: 20, puffer_kwh: 3.2 });
+add("house_usage_profile", "sensor.eva_haus", 12, { konfiguriert: true, ...wk([11.4, 10.9, 12.0, 11.7, 13.2, 16.3, 15.8]) });
+add("plug_window", "sensor.eva_plug", 14, wk([14, 13, 15, 12, 11, 18, 20]));
+const dep = (t) => ({ status: "ok", typisch: t, n_gueltig: 6 });
+add("morning_departure", "sensor.eva_dep", "7:15", { mindestanzahl: 4, je_wochentag: { montag: dep("7:15"), dienstag: dep("7:20"), mittwoch: dep("7:10"), donnerstag: dep("7:25"), freitag: dep("7:05"), samstag: dep("9:40"), sonntag: { status: "nicht_belastbar", n_gueltig: 2 } } });
+add("available_kwh", "sensor.eva_avail", 29.4);
+add("charge_before_pv_recommended", "binary_sensor.eva_rec", "off", { verfuegbare_km: 190, pv_prognose_morgen_kwh: 21.5, pv_prognose_morgen_km: 134 });
+add("evcc_mode_control", "sensor.eva_mode", "auto", { urlaub_aktiv: false, pv_ueberschuss_w: 4200, wallbox_min_power_w: 1400, pv_override_max_mischpreis_kwh: 0.2, pv_override_min_solar_share_pct: 50, aktiv: true, target_soc_max: 80, target_soc: 80, balancing_enabled: true, naechste_vollladung_faellig_ts: Math.round(at(-4, 12) / 1000) });
+add("battery_capacity", "sensor.eva_cap", 62.8); add("equivalent_full_cycles", "sensor.eva_cyc", 71.6);
+add("charging_location_breakdown", "sensor.eva_loc", 1, { eur_je_100km: 3.42, bekannte_anbieter: ["EnBW", "Ionity", "Aldi Süd", "Tesla Supercharger", "Stadtwerke München"] });
+add("range_estimate", "sensor.eva_range", 248, { aussentemperatur: 9, temperaturband_aktuell: "0-10°C", verbrauch_nach_temperatur: { "<0°C": 21.9, "0-10°C": 18.7, "10-20°C": 16.2, ">20°C": 15.1 } });
+add("vehicle_avg_consumption", "sensor.eva_cons", 16.8, { unit_of_measurement: "kWh/100km" });
+add("odo", "sensor.eva_odo", odo, { unit_of_measurement: "km" });
+add("cost_year", "sensor.eva_cost_year", 486.2, { unit_of_measurement: "€" });
+add("savings", "sensor.eva_savings", 1842.3, { unit_of_measurement: "€", kosten_ev_gesamt: 563.1, kosten_verbrenner_geschaetzt: 2405.4, gefahrene_km: 20660, ersparnis: 1842.3 });
+add("last_trip_km", "sensor.eva_lt", trips[trips.length - 1].km, { unit_of_measurement: "km" });
+for (const [k, v] of Object.entries({ odo_day_km: 48.4, odo_week_km: 286, odo_month_km: 1104, odo_year_km: 13420, kwh_day: 8.1, kwh_week: 47.9, kwh_month: 184, kwh_year: 2254, cost_day: 1.9, cost_week: 11.4, cost_month: 46.8, odo_avg_day: 45.6, odo_year_projected: 16900 }))
+  add(k, `sensor.eva_${k}`, v, {});
+add("cost_day", "sensor.eva_cost_day", 1.9); add("cost_week", "sensor.eva_cost_week", 11.4); add("cost_month", "sensor.eva_cost_month", 46.8);
+add("co2_savings", "sensor.eva_co2", 2280, { unit_of_measurement: "kg" });
+add("verbrenner_price_selected", "sensor.eva_fuel", 1.74, { quelle: "tankerkoenig" });
+add("leasing_km_vor_ruecklauf", "sensor.eva_lease", -1240, { status: "im_budget", verbleibende_tage: 523, verbleibendes_tagesbudget_km: 47.2, resterlaubte_km: 24680, vertrag_inkl_km: 45000, gefahrene_vertrags_km: 20320, soll_km_bis_heute: 21560, toleranz_mehr_km: 2500, toleranz_minder_km: 2500 });
+const live = { tariff_feedin: 0.081, tariff_grid: 0.318, connected: true, vehicle_soc: socNow, mode: "pv", limit_soc: 80, min_soc: 20, stat_solar_pct: 63,
+  ...(CHARGING ? { charging: true, charge_power: 5.84, session_energy: 9.6, session_solar_pct: 64, session_price: 1.38, charge_duration: 6720, charge_currents: [8.4, 8.5, 8.4] } : { charging: false }) };
+add("home_kwh", "sensor.eva_home", 3, { evcc_live: live });
+plain("sensor.evcc_lp_laderestzeit", CHARGING ? 158 : 0, { unit_of_measurement: "min" });
+entities["sensor.evcc_lp_laderestzeit"] = { entity_id: "sensor.evcc_lp_laderestzeit", platform: "evcc_intg", translation_key: "chargeremainingduration" };
+add("wartung_faellig", "sensor.eva_wart", "off", { punkte: [
+  { id: 1, name: "Inspektion", typ: "inspektion", km_intervall: 25000, zeit_intervall_monate: 24, erst_km_intervall: 12500, erst_zeit_intervall_monate: 12, erledigt_anzahl: 1, intervall_phase: "regulaer", km_intervall_wirksam: 25000, zeit_intervall_wirksam: 24, last_done: { km: 12300, datum: "2025-11-20" }, kosten: 289.5, aktiv: true, status: "ok", rest_tage: 391, rest_km: 16300, faellig_datum: "2027-11-20", naechste_quelle: "zeit" },
+  { id: 2, name: "HU / TÜV", typ: "tuev", zeit_intervall_monate: 36, festes_datum: "2026-11-30", last_done: { datum: "2023-11-20" }, aktiv: true, status: "bald_faellig", rest_tage: 36, faellig_datum: "2026-11-30", naechste_quelle: "fest", erledigt_anzahl: 1 },
+  { id: 3, name: "Reifenwechsel", zeit_intervall_monate: 6, last_done: { km: 38100, datum: "2026-04-12" }, aktiv: true, status: "bald_faellig", rest_tage: 6, faellig_datum: "2026-10-31", naechste_quelle: "zeit", erledigt_anzahl: 3 },
+  { id: 4, name: "Bremsflüssigkeit", zeit_intervall_monate: 24, last_done: { datum: "2024-10-15" }, aktiv: true, status: "ueberfaellig", rest_tage: -10, faellig_datum: "2026-10-15", naechste_quelle: "zeit" }],
+  presets: [{ key: "tuev", name: "HU / TÜV", zeit_intervall_monate: 24 }, { key: "inspektion", name: "Inspektion", km_intervall: 30000, zeit_intervall_monate: 24 }] });
+add("ladekarten_kosten", "sensor.eva_lk", 140.8, { gesamt: 140.8, karten: [
+  { id: 11, name: "EnBW mobility+ M", start_datum: "2025-02-01", end_datum: null, gebuehren: [{ ab_datum: "2025-02-01", gebuehr: 5.99 }, { ab_datum: "2026-01-01", gebuehr: 6.99 }], aktuelle_gebuehr: 6.99, kosten: 128.6 },
+  { id: 12, name: "Ionity Passport", start_datum: "2025-06-01", end_datum: "2025-11-30", gebuehren: [{ ab_datum: "2025-06-01", gebuehr: 5.1 }], aktuelle_gebuehr: 5.1, kosten: 30.6 }] });
+// Fahrzeugbild: stilisiertes E-Auto (Seitenansicht)
+const car = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 250'><defs>
+<linearGradient id='b' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#e8edf3'/><stop offset='.55' stop-color='#b9c3cf'/><stop offset='1' stop-color='#7d8896'/></linearGradient>
+<linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#3b4654'/><stop offset='1' stop-color='#0f141b'/></linearGradient>
+<radialGradient id='w'><stop offset='.55' stop-color='#9aa4b1'/><stop offset='.62' stop-color='#2a313a'/><stop offset='1' stop-color='#0b0e12'/></radialGradient>
+<radialGradient id='s' cx='.5' cy='.5' r='.5'><stop offset='0' stop-color='#000' stop-opacity='.55'/><stop offset='1' stop-color='#000' stop-opacity='0'/></radialGradient></defs>
+<ellipse cx='320' cy='212' rx='290' ry='22' fill='url(%23s)'/>
+<path d='M58 168 C52 140 70 122 112 116 L196 104 C232 72 284 56 360 56 C430 56 470 72 512 104 L560 112 C592 118 606 136 604 160 L600 178 C598 186 590 190 580 190 L72 190 C62 190 58 182 58 168Z' fill='url(%23b)'/>
+<path d='M214 106 C246 80 290 68 352 68 C410 68 446 80 478 104 Z' fill='url(%23g)'/>
+<path d='M346 68 L350 106' stroke='%23b9c3cf' stroke-width='6'/>
+<path d='M70 150 L600 146' stroke='%23ffffff' stroke-opacity='.35' stroke-width='2'/>
+<path d='M560 128 L600 134' stroke='%2338bdf8' stroke-width='5' stroke-linecap='round'/>
+<path d='M64 136 L96 130' stroke='%23f87171' stroke-width='5' stroke-linecap='round'/>
+<path d='M70 176 L596 172' stroke='%235b6573' stroke-width='6' stroke-linecap='round'/>
+<circle cx='170' cy='186' r='40' fill='url(%23w)'/><circle cx='170' cy='186' r='14' fill='%23cfd6de'/>
+<circle cx='488' cy='186' r='40' fill='url(%23w)'/><circle cx='488' cy='186' r='14' fill='%23cfd6de'/></svg>`;
+add("vehicle_image", "image.eva_img", "2026-10-01T10:00:00", { entity_picture: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(car.replace(/\n/g, "").replace(/%23/g, "#")) });
+add("pending", "binary_sensor.eva_pending", Q.get("pend") === "1" ? "on" : "off", { offene_ladungen: Q.get("pend") === "1" ? [{ start_ts: Math.round(at(1, 13, 10) / 1000), energy_kwh: 36.2, soc_start: 21, soc_end: 78, duration_min: 29 }] : [] });
+add("trip_pending", "binary_sensor.eva_trip_pending", "off", { offene_fahrten: [] });
+plain("input_boolean.urlaub", "off", { friendly_name: "Urlaub" });
+
+const log = [[0.2, "modus", "evcc-Modus auf pv gesetzt (Akku reicht bis morgen, PV-Überschuss 4,2 kW)"], [5, "ladung", "Heimladung beendet: 18,4 kWh, 82 % PV, 1,72 €"], [26, "fahrt", "Fahrt erfasst: Zuhause → Büro, 24,3 km, 3,9 kWh"],
+  [28, "fremdladung", "Fremdladung bestätigt: 38,6 kWh bei EnBW, 22,77 €"], [51, "modus", "Vollladung auf 100 % für den Zellausgleich"], [77, "problem", "evcc nicht erreichbar (Timeout), neuer Versuch in 60 s"], [78, "problem", "evcc wieder erreichbar"]]
+  .map(([h, kategorie, text]) => ({ ts: (NOW - h * H) / 1000, kategorie, text }));
+
+const hass = { states, entities, devices: {}, language: LANG, locale: { language: LANG, number_format: "language" },
+  services: { ev_assistant: { set_usage_profile_buffer_km: {}, set_evcc_realtime_override_min_solar_share: {}, set_evcc_charge_plan_range_km: {}, add_maintenance: {} } },
+  callService: async () => {},
+  callApi: async (m, url) => { const u = new URL("http://x/" + url), t0 = Date.parse(decodeURIComponent(url.split("/")[2].split("?")[0])), t1 = Date.parse(u.searchParams.get("end_time")) || NOW;
+    return (u.searchParams.get("filter_entity_id") || "").split(",").filter((id) => ["sensor.mg4_soc", "sensor.wallbox_power"].includes(id)).map((id) => hist(id, t0, t1)); },
+  callWS: async (m) => {
+    if (m.type === "get_panels") return {};
+    if (m.type === "recorder/statistics_during_period") { const o = {}; for (const id of m.statistic_ids) if (["sensor.mg4_soc", "sensor.wallbox_power"].includes(id)) o[id] = stats(id, Date.parse(m.start_time), Date.parse(m.end_time)); return o; }
+    if (m.type === "ev_assistant/event_log") return { event_log: log };
+    if (m.type === "ev_assistant/trips") return { trips };
+    if (m.type === "ev_assistant/evcc_sessions") return { sessions };
+    if (m.type === "ev_assistant/charges") return { charges: ext };
+    return {};
+  } };
+try { localStorage.setItem("mg-car-page", PAGE); localStorage.setItem("mg-car-hist-hours", Q.get("hh") || "24"); localStorage.setItem("mg-car-cost-period", Q.get("cp") || "month"); localStorage.setItem("mg-car-stat-view", Q.get("sv") || "lease"); } catch (e) {}
+const el = document.createElement("mg-car-dashboard");
+el.setConfig({ car: { name: "MG4 Electric", soc: "sensor.mg4_soc", urlaub_entity: "input_boolean.urlaub" }, energy: { car_power: "sensor.wallbox_power" } });
+document.getElementById("host").appendChild(el); el.hass = hass; window.__el = el;
+</script></body></html>

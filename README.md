@@ -8,6 +8,50 @@ Custom Lovelace cards for Home Assistant — dark, modern, card-based.
 |-------|-------------|
 | `custom:mg-car-dashboard` | Auto-Seite mit evcc, ev_assistant, Fahrtenbuch |
 
+## Screenshots
+
+Alle Bilder sind mit Beispieldaten erstellt.
+
+### Übersicht
+Ladestand und Fahrzeug, laufende Ladung mit PV-Anteil, Lademanagement mit ev_assistant, Verlauf (Ladeleistung, Netz/PV, Ladestand), Fahrtenbuch und Leasing-Budget.
+
+<img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/uebersicht.png" alt="Übersicht">
+
+### Profil & Analyse
+Nutzungsprofil der Woche, Empfehlung für morgen, Analyse (Batterie, Verbrauch nach Temperatur, Kosten, Autarkie, Ladeorte, Schnellladen, Anbieter) und Netz-Zuschuss.
+
+<img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/profil-analyse.png" alt="Profil & Analyse">
+
+### Laden & Kosten
+Geladene Energie nach Quelle (Heim PV, Heim Netz, Fremd AC/DC) für Tag, Woche, Monat, Jahr oder Gesamt, alle Ladungen des Zeitraums sortierbar, Aufschlüsselung und Vergleich mit einem Verbrenner.
+
+<img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/laden-kosten.png" alt="Laden & Kosten">
+
+### Einstellungen
+Wartung mit Countdown bis zum nächsten Termin, Ladekarten, Urlaubsmodus, Fahrzeugbild, Datensicherung, Fahrtenbuch-Export/-Import und Ereignisprotokoll.
+
+<img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/einstellungen.png" alt="Einstellungen">
+
+### Fenster und Menüs
+
+| Alle Ladungen | Alle Fahrten |
+|:---:|:---:|
+| <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/dlg-ladungen.png" alt="Alle Ladungen"> | <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/dlg-fahrten.png" alt="Alle Fahrten"> |
+| **Autarkie und Ersparnis** | **Fremdladung bestätigen** |
+| <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/dlg-autarkie.png" alt="Autarkie"> | <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/dlg-bestaetigen.png" alt="Fremdladung bestätigen"> |
+| **Lademodus wählen** | **English** |
+| <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/menu-lademodus.png" alt="Lademodus wählen"> | <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/overview-en.png" alt="Overview in English"> |
+
+### Handy
+
+<p>
+  <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/handy.png" alt="Übersicht auf dem Handy" width="300">
+  &nbsp;
+  <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/handy-kosten.png" alt="Laden & Kosten auf dem Handy" width="300">
+</p>
+
+Die Bilder erstellt `node docs/screenshots/generator/shots.mjs` (Playwright mit Chromium) neu.
+
 ## Installation
 
 ### Über HACS (empfohlen)
@@ -27,7 +71,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=57`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=58`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -202,6 +246,7 @@ car:
 | 3.5.29 | Englische Oberfläche (Sprache aus Home Assistant oder `language`), Schrift „Outfit“ in der Karte enthalten statt von Google geladen |
 | 3.5.30 | Profil & Analyse: Fenster „Autarkie“ mit Autarkiegrad und Ersparnis beim Heimladen gegenüber reinem Netzstrom |
 | 3.5.31 | Analyse rechnet Autarkie, Ladeorte, Kosten, AC/DC und Anbieter aus allen Ladungen (evcc-Ladelogbuch + Fremdladungen) – dieselben Werte wie „Laden & Kosten“ |
+| 3.5.32 | Screenshots in der Beschreibung, englische Kachel „Mode“ statt „Charging mode“ |
 | 3.5.27 | Lademanagement: PV-Anteil wieder orange, Puffer grün |
 | 3.5.26 | Übersicht ohne Scrollbalken rechts, PV-Anteil/Puffer mit Auswahl wie Ladeziel, Laden & Kosten bündig |
 | 3.5.25 | Lademanagement: Automatik · Manuell · Vollladung / Ladeziel · PV-Anteil · Puffer, „Plan setzen“ mittig |
