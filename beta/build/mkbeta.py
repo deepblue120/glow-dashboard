@@ -22,7 +22,7 @@ s = s.replace(a, a + ''.join(f'    {json.dumps(k, ensure_ascii=False)}: {json.du
 if beta:
     for x, y in [('customElements.get("mg-car-dashboard")) customElements.define("mg-car-dashboard", MgCarDashboard);', 'customElements.get("mg-car-dashboard-beta")) customElements.define("mg-car-dashboard-beta", MgCarDashboard);'),
                  ('window.customCards.push({ type: "mg-car-dashboard", name: "Glow Auto",', 'window.customCards.push({ type: "mg-car-dashboard-beta", name: "Glow Auto (Beta: Handy-Cockpit)",'),
-                 ('const VERSION = "', 'const VERSION = "beta1-'),
+                 ('const VERSION = "', 'const VERSION = "beta2-'),
                  ('c.type === "mg-car-dashboard"))', 'c.type === "mg-car-dashboard-beta"))'),
                  (' * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js\n * Ressource: /local/glow-dashboard/mg-car-dashboard.js', ' * Ablage:    /config/www/glow-dashboard/mg-car-dashboard-beta.js\n * Ressource: /local/glow-dashboard/mg-car-dashboard-beta.js'),
                  (' * YAML:      type: custom:mg-car-dashboard\n', ' * YAML:      type: custom:mg-car-dashboard-beta\n'),
