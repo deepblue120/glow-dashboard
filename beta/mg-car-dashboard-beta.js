@@ -8,7 +8,7 @@
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "beta1-3.5.32";
+const VERSION = "beta2-3.5.32";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -3088,12 +3088,12 @@ class MgCarDashboard extends HTMLElement {
     const split = V.pvK != null && V.kwh > 0.01 ? `<div class="msplit"><i class="pv" style="flex:${Math.max(V.pvK, 0.001)}"></i><i class="gr" style="flex:${Math.max(V.grK, 0.001)}"></i></div>` : "";
     const lt = this._fmt(E.last_trip_km, 0);
     const foot = V.pvK != null || lt ? `<div class="mfoot"><span>${V.pvK != null ? `PV <b>${de(V.pvK, 1)} kWh</b> · ${T("Netz")} <b>${de(V.grK, 1)} kWh</b>` : ""}</span>${lt ? `<span>${T("Letzte Fahrt")} <b>${lt.v} km</b></span>` : ""}</div>` : "";
-    const { pendBtn, flags } = this._carFlags(), stats = this._mx === "stats" ? this._carStats() : "";
+    const { pendBtn, flags } = this._carFlags();
     const chip = charging ? `<span class="lbl mchip">${icon("mdi:lightning-bolt")}${esc(T("Lädt"))}${V.kickEnd ? ` · ${esc(V.kickEnd)}` : ""}</span>` : `<span class="lbl">${esc(status)}</span>`;
     const html = `${img ? `<img class="mcar" src="${esc(img)}" alt="">` : ""}
       <div class="hd">${this._carTitle(name)}${pendBtn || chip}</div>
       <div class="mtop">${ring}<button class="mside" data-act="charges" title="${T("Alle Ladungen anzeigen")}">${side}</button></div>
-      ${split}${foot}${this._carFlagChips(flags)}${stats ? `<div class="cstats">${stats}</div>` : ""}`;
+      ${split}${foot}${this._carFlagChips(flags)}`;
     const el = this.shadowRoot.getElementById("car");
     el.classList.toggle("mhero", true); el.classList.toggle("chg", charging);
     if (el._html !== html) { el.innerHTML = html; el._html = html; }
@@ -3107,7 +3107,9 @@ class MgCarDashboard extends HTMLElement {
     if (!this._mob) { if (el._html) { el.innerHTML = ""; el._html = ""; } delete wrap.dataset.mx; return; }
     const mx = this._mx || "", E = this._eva();
     if (mx) wrap.dataset.mx = mx; else delete wrap.dataset.mx;
-    const row = (k, ic, lbl, val, open = true) => `<button class="mrow${mx === k ? " open" : ""}" data-act="mrow" data-k="${k}">${icon(ic)}<b>${lbl}</b><span>${val}</span>${icon(!open ? "mdi:chevron-right" : mx === k ? "mdi:chevron-up" : "mdi:chevron-down", "mrc")}</button>`;
+    // jede Zeile mit eigener Reihenfolge, damit der aufgeklappte Inhalt direkt darunter steht (Verlauf 5, Leasing 7, Kennzahlen 9)
+    const ORD = { trips: 3, hist: 4, lease: 6, stats: 8 };
+    const row = (k, ic, lbl, val, open = true) => `<button class="mrow${mx === k ? " open" : ""}" style="order:${ORD[k]}" data-act="mrow" data-k="${k}">${icon(ic)}<b>${lbl}</b><span>${val}</span>${icon(!open ? "mdi:chevron-right" : mx === k ? "mdi:chevron-up" : "mdi:chevron-down", "mrc")}</button>`;
     const rows = [];
     // Fahrtenbuch: letzte Fahrt, Antippen öffnet „Alle Fahrten“
     const t = this._tripList()[0], place = (x) => ({ home: T("Zuhause"), zuhause: T("Zuhause"), Home: T("Zuhause"), not_home: T("unterwegs") }[x] || x || "?");
@@ -3119,8 +3121,10 @@ class MgCarDashboard extends HTMLElement {
     if (this._leaseOk) { const L = this._leaseSum || {}; rows.push(row("lease", "mdi:car-clock", T("Leasing"), `${L.t ? `<em style="color:${L.c}">${esc(L.t)}</em> · ` : ""}${L.km != null ? `${L.km > 0 ? "+" : ""}${de(L.km, 0)} km` : ""}`)); }
     else if (this._config.car.usage !== false && this._config.car.usage !== "") { const o = this._fmt(E.odo, 0); if (o || this._fmt(E.odo_month_km, 0)) rows.push(row("lease", "mdi:speedometer", T("Nutzung"), o ? `${o.v} km` : "")); }
     // Kennzahlen der Auto-Kachel
-    if (this._carStats()) { const a = this._fmt(E.vehicle_avg_consumption), s = this._fmt(E.savings, 0);
-      rows.push(row("stats", "mdi:gauge", T("Kennzahlen"), [a && `${esc(a.v)} kWh/100`, s && `${esc(s.v)} € ${T("gespart")}`].filter(Boolean).join(" · "))); }
+    const stats = this._carStats();
+    if (stats) { const a = this._fmt(E.vehicle_avg_consumption), s = this._fmt(E.savings, 0);
+      rows.push(row("stats", "mdi:gauge", T("Kennzahlen"), [a && `${esc(a.v)} kWh/100`, s && `${esc(s.v)} € ${T("gespart")}`].filter(Boolean).join(" · ")));
+      if (mx === "stats") rows.push(`<div class="cstats mstat">${stats}</div>`); }
     const html = rows.join("");
     if (el._html !== html) { el.innerHTML = html; el._html = html; }
   }
@@ -3204,9 +3208,13 @@ class MgCarDashboard extends HTMLElement {
       const k = el.dataset.k;
       if (k === "trips") { this._openTrips(); return; }
       this._mx = this._mx === k ? null : k;
-      const car = this.shadowRoot.getElementById("car"); if (car) car._html = null;
       this._update(true);
-      if (k === "hist" && this._mx) requestAnimationFrame(() => this._fitHist());
+      // aufgeklappten Inhalt sanft ins Bild holen (nur so weit wie nötig, die Zeile bleibt an ihrer Stelle)
+      if (this._mx) requestAnimationFrame(() => {
+        const sr = this.shadowRoot, box = k === "hist" ? sr.getElementById("hist") : k === "stats" ? sr.querySelector(".mstat")
+          : [sr.getElementById("lease"), sr.getElementById("usage")].find((x) => x && !x.hidden);
+        box?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
       return;
     }
     if (act === "mplanopen") { this._planOpen = true; this._render_mgmt(); return; }
@@ -3656,8 +3664,10 @@ const CAR_STYLE = `
 .wrap.mob #pmain .col{display:contents}
 .wrap.mob .panel{border-radius:22px;padding:14px}
 .wrap.mob .panel .hd{margin-bottom:10px}
-.wrap.mob #car{order:1}.wrap.mob #mgmt{order:2}.wrap.mob #mrows{order:3;display:flex;flex-direction:column;gap:6px}
-.wrap.mob #hist,.wrap.mob #lease,.wrap.mob #usage{order:4}
+.wrap.mob #car{order:1}.wrap.mob #mgmt{order:2}.wrap.mob #mrows{display:contents}
+.wrap.mob #hist{order:5}.wrap.mob #lease,.wrap.mob #usage{order:7}
+.wrap.mob .mrow + .mrow{margin-top:-4px}
+.mstat{order:9;padding:12px;border-radius:18px;background:linear-gradient(180deg,#161920,#12151b);border:1px solid var(--line)}
 .wrap.mob #live,.wrap.mob #trips{display:none}
 .wrap.mob:not([data-mx="hist"]) #hist{display:none!important}
 .wrap.mob:not([data-mx="lease"]) #lease,.wrap.mob:not([data-mx="lease"]) #usage{display:none!important}
