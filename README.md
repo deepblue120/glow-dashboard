@@ -18,7 +18,7 @@ Ladestand und Fahrzeug, laufende Ladung mit PV-Anteil, Lademanagement mit ev_ass
 <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/uebersicht.png" alt="Übersicht">
 
 ### Profil & Analyse
-Nutzungsprofil der Woche, Empfehlung für morgen, Analyse (Batterie, Verbrauch nach Temperatur, Kosten, Autarkie, Ladeorte, Schnellladen, Anbieter) und Netz-Zuschuss.
+Nutzungsprofil der Woche, Empfehlung für morgen, Analyse (Batterie, Verbrauch nach Temperatur, Ladewirkungsgrad, Kosten, Autarkie, Ladeorte, Schnellladen, Anbieter) und Netz-Zuschuss.
 
 <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/profil-analyse.png" alt="Profil & Analyse">
 
@@ -71,7 +71,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=58`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=59`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -128,7 +128,7 @@ Die Unterseite zeigt die Daten aus den ev_assistant-Reitern „Nutzungsprofil“
 |---|---|
 | Deine Woche | je Wochentag Ø Bedarf des Autos (ca. km, sonst kWh), Hausverbrauch, Steckdauer und typische Abfahrt; heute und morgen markiert |
 | Morgen | Ladeempfehlung, verfügbar / Bedarf / Puffer (per Auswahl 0–300 km einstellbar) / PV fürs Auto (Prognose minus Hausverbrauch laut Hausprofil; km, kWh daneben) und wie weit der Akku laut Profil reicht |
-| Analyse | Kacheln für Batterie, Verbrauch bei aktueller Temperatur, Kosten, Autarkie, Ladeorte, Schnellladen und Top-Anbieter – antippen öffnet die Details |
+| Analyse | Kacheln für Batterie, Verbrauch bei aktueller Temperatur, Ladewirkungsgrad, Kosten, Autarkie, Ladeorte, Schnellladen und Top-Anbieter – antippen öffnet die Details |
 | Netz-Zuschuss | Skala von Einspeisevergütung bis Netzpreis mit Schwelle und aktuellem Mischpreis (Tarife aus evcc) |
 
 Fehlende Werte blendet die Karte aus bzw. zeigt „–“ (z. B. ohne Hauszähler oder Außentemperatur in ev_assistant).
@@ -245,6 +245,7 @@ car:
 | 3.5.30 | Profil & Analyse: Fenster „Autarkie“ mit Autarkiegrad und Ersparnis beim Heimladen gegenüber reinem Netzstrom |
 | 3.5.31 | Analyse rechnet Autarkie, Ladeorte, Kosten, AC/DC und Anbieter aus allen Ladungen (evcc-Ladelogbuch + Fremdladungen) – dieselben Werte wie „Laden & Kosten“ |
 | 3.5.32 | Screenshots in der Beschreibung, englische Kachel „Mode“ statt „Charging mode“ |
+| 3.5.33 | Profil & Analyse: Kachel „Ladewirkungsgrad“ (gemessen bzw. Startwert, Einzelwerte der letzten Ladungen) |
 | 3.5.27 | Lademanagement: PV-Anteil wieder orange, Puffer grün |
 | 3.5.26 | Übersicht ohne Scrollbalken rechts, PV-Anteil/Puffer mit Auswahl wie Ladeziel, Laden & Kosten bündig |
 | 3.5.25 | Lademanagement: Automatik · Manuell · Vollladung / Ladeziel · PV-Anteil · Puffer, „Plan setzen“ mittig |
