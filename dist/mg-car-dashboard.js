@@ -6,7 +6,7 @@
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "3.5.33";
+const VERSION = "3.5.34";
 // Version der Datenschnittstelle zu ev_assistant (Panel-Konfiguration, Websocket-Befehle, evcc_live),
 // die diese Karte erwartet. Meldet ev_assistant in der Panel-Konfiguration eine andere "api_version",
 // warnt die Karte (Konsole + Hinweis). Ohne "api_version" (ältere ev_assistant-Versionen) keine Warnung.
@@ -260,6 +260,7 @@ class MgCarDashboard extends HTMLElement {
     this._update();
   }
   connectedCallback() {
+    if (this._built && this._pg && this._pg !== "main") { this._pg = "main"; this._showPage(); this._update(true); }   // erneutes Aufrufen der Seite: zurück auf „Übersicht“
     if (!this._onResize) {
       this._onResize = () => { cancelAnimationFrame(this._fitRaf); this._fitRaf = requestAnimationFrame(() => { this._fit(); this._render_trips(); this._kFit(); this._fitHist(); }); };
       this._ro = new ResizeObserver(this._onResize);
@@ -1648,8 +1649,7 @@ class MgCarDashboard extends HTMLElement {
   /* ---------- Unterseite „Profil & Analyse“ (Daten aus ev_assistant) ---------- */
   _subPage() {
     if (this._pg) return this._pg;
-    let v = null; try { v = localStorage.getItem("mg-car-page"); } catch (e) {}
-    return (this._pg = ["prof", "set", "cost"].includes(v) ? v : "main");
+    return (this._pg = "main");   // beim Aufrufen immer die Übersicht
   }
   _showPage() {
     const p = this._subPage(), sr = this.shadowRoot;
