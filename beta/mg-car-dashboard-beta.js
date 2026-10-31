@@ -8,7 +8,7 @@
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "beta3-3.5.35";
+const VERSION = "beta4-3.5.35";
 // merkt sich den letzten Wechsel der Adresse (auch wenn die Karte dabei aus- und neu eingehängt wird, z. B. durch Detailfenster)
 const NAV = (window.__glowCarNav = window.__glowCarNav || (() => {
   const n = { cur: location.pathname, t: 0 };
@@ -345,7 +345,7 @@ class MgCarDashboard extends HTMLElement {
         </div>
         <div class="grid kgrid" id="pcost" hidden>
           <div class="col"><section class="panel" id="kgel"></section><section class="panel" id="klist"></section></div>
-          <div class="col"><section class="panel" id="kauf"></section><section class="panel" id="kcmp"></section></div>
+          <div class="col"><section class="panel" id="kauf"></section><section class="panel" id="kcmp"></section><div class="mrows" id="kmrows"></div></div>
         </div>
         <div class="grid sgrid" id="pset" hidden>
           <div class="col"><section class="panel" id="swart"></section><section class="panel" id="slk"></section><section class="panel" id="slog"></section></div>
@@ -1679,6 +1679,7 @@ class MgCarDashboard extends HTMLElement {
     return (this._pg = "main");   // beim Aufrufen immer die Übersicht
   }
   _showPage() {
+    if (this._mob && this._subPage() === "set") this._pg = "main";   // Handy: ohne Einstellungen
     const p = this._subPage(), sr = this.shadowRoot;
     sr.getElementById("pmain").hidden = p !== "main";
     sr.getElementById("pprof").hidden = p !== "prof";
@@ -1711,6 +1712,16 @@ class MgCarDashboard extends HTMLElement {
     const minN = this._ea("morning_departure")?.attributes?.mindestanzahl || 4;
     const dep = (s) => !s ? "–" : s.status === "ok" && s.typisch ? s.typisch : s.status === "nicht_belastbar" ? `${s.n_gueltig}/${minN}` : s.status === "uneinheitlich" ? "?" : "–";
     const { today, tomorrow } = this._wdIdx(), showHs = Hs.konfiguriert === true && hs.some((x) => x != null);
+    if (this._mob) {   // Handy: eine Zeile je Tag
+      const cols = [[T("Auto"), (i) => `${hasKm ? this._roundKm(ev[i]) : de(ev[i], 1)}<small>${hasKm ? "km" : "kWh"}</small>`, "ev"],
+        showHs && [T("Haus"), (i) => (hs[i] == null ? "–" : `${de(hs[i], 1)}<small>kWh</small>`), "hs"],
+        pl.some((x) => x != null) && [T("Steckt"), (i) => (pl[i] == null ? "–" : `${de(pl[i], pl[i] >= 10 ? 0 : 1)}<small>h</small>`), "pl"],
+        Dp && [T("Abfahrt"), (i) => esc(dep(Dp[PWD[i][0]])), "dp"]].filter(Boolean);
+      const g = `style="grid-template-columns:52px repeat(${cols.length},minmax(0,1fr))"`;
+      el.innerHTML = head + `<div class="pwk"><div class="pwr ph" ${g}><span></span>${cols.map(([l]) => `<span>${l}</span>`).join("")}</div>`
+        + PWD.map(([, lbl], i) => `<div class="pwr ${i === tomorrow ? "tm" : i === today ? "td" : ""}" ${g}><b>${lbl}${i === tomorrow ? `<em>${T("morgen")}</em>` : i === today ? `<em>${T("heute")}</em>` : ""}</b>${cols.map(([, f, c]) => `<span class="${c}">${f(i)}</span>`).join("")}</div>`).join("") + `</div>`;
+      return;
+    }
     const days = PWD.map(([k, lbl], i) => {
       const cls = i === tomorrow ? "tm" : i === today ? "td" : "";
       return `<div class="pday ${cls}"><div class="pdn"><b>${lbl}</b>${i === tomorrow ? `<span>${T("MORGEN")}</span>` : i === today ? `<span>${T("HEUTE")}</span>` : ""}</div>
@@ -1971,7 +1982,7 @@ class MgCarDashboard extends HTMLElement {
     const box = this.shadowRoot.querySelector("#klist .klist"), col = this.shadowRoot.querySelector("#pcost");
     if (!box || !col || col.hidden) return;
     const narrow = col.getBoundingClientRect().width < 900;
-    let h = narrow ? Math.round(window.innerHeight * 0.6) : Math.floor(window.innerHeight - box.getBoundingClientRect().top - 44);
+    let h = narrow ? Math.round(window.innerHeight * (this._mob ? 0.45 : 0.6)) : Math.floor(window.innerHeight - box.getBoundingClientRect().top - 44);
     h = Math.max(220, h);
     if (box._h !== h) { box._h = h; box.style.maxHeight = h + "px"; }
   }
@@ -2030,11 +2041,27 @@ class MgCarDashboard extends HTMLElement {
     return S;
   }
 
-  _render_cost() {
+  _render_cost() { this._kSum = null; this._render_cost_(); this._render_kmrows(); }
+  /* Handy: Aufschlüsselung und Vergleich Verbrenner als Zeilen mit Kurzwert, Antippen klappt auf */
+  _render_kmrows() {
+    const el = this.shadowRoot.getElementById("kmrows"), wrap = this.shadowRoot.querySelector(".wrap");
+    if (!el || !wrap) return;
+    if (!this._mob) { if (el._html) { el.innerHTML = ""; el._html = ""; } delete wrap.dataset.kmx; return; }
+    const mx = this._kmx || "", K = this._kSum || {};
+    if (mx) wrap.dataset.kmx = mx; else delete wrap.dataset.kmx;
+    const row = (k, ord, ic, lbl, val) => `<button class="mrow${mx === k ? " open" : ""}" style="order:${ord}" data-act="kmrow" data-k="${k}">${icon(ic)}<b>${lbl}</b><span>${val}</span>${icon(mx === k ? "mdi:chevron-up" : "mdi:chevron-down", "mrc")}</button>`;
+    // Kurzwert mit den Farben der Legende: Heim PV, Heim Netz, Fremd (kWh)
+    const auf = K.pv != null ? [`<i class="kd kpv"></i>${de(K.pv, 0)}`, `<i class="kd kgr"></i>${de(K.gr, 0)}`, K.fr > 0.05 && `<i class="kd kdc"></i>${de(K.fr, 0)}`].filter(Boolean).join(" ") + " kWh" : "";
+    const cmp = K.saved != null ? `<em style="color:${K.saved >= 0 ? "var(--green)" : "var(--orange)"}">${K.saved >= 0 ? T("Gespart") : T("Mehrkosten")} ${de(Math.abs(K.saved), 2)} €</em>` : "–";
+    const html = row("kauf", 3, "mdi:chart-donut", T("Aufschlüsselung"), auf) + row("kcmp", 5, "mdi:gas-station-outline", T("Vergleich Verbrenner"), cmp);
+    if (el._html !== html) { el.innerHTML = html; el._html = html; }
+  }
+  _render_cost_() {
     const sr = this.shadowRoot;
     if (!this._charges || Date.now() - this._charges.t > 5 * 60000) this._loadCharges();
     if (!this._evaTrips) this._loadTrips();
     const cp = this._cpGet(), R = this._cpRange(), S = this._cpSum(R.a, R.b);
+    this._kSum = { pv: S.pv[0], gr: S.gr[0], fr: S.ac[0] + S.dc[0], saved: null };   // für die Zeilen (Handy)
     const P = this._cpRange(cp.p, cp.off - 1), SP = cp.p === "all" ? null : this._cpSum(P.a, P.b);
     const loading = !this._charges;
     // Zeitraum-Leiste neben den Seiten-Tabs
@@ -2114,6 +2141,7 @@ class MgCarDashboard extends HTMLElement {
     const el = sr.getElementById("kcmp");
     if (rate == null) { el.innerHTML = this._hd(T("Vergleich Verbrenner")) + `<div class="empty">${T("ev_assistant hat noch keinen Verbrenner-Vergleich – dafür in den ev_assistant-Optionen (Schritt „Vergleich“) Verbrauch und Spritpreis des Verbrenners eintragen.")}</div>`; return; }
     const vC = S.km * rate, saved = vC - S.total, mxc = Math.max(0.01, vC, S.total);
+    this._kSum.saved = saved;
     const lPer100 = !isNaN(fuel) && fuel > 0 ? (rate * 100) / fuel : null, liters = lPer100 != null ? (S.km * lPer100) / 100 : null;
     const co2 = parseFloat(this._ea("co2_savings")?.state), co2P = !isNaN(co2) && gk > 0 ? (co2 / gk) * S.km : null;
     const sinceAll = parseFloat(sv?.state);
@@ -2923,7 +2951,7 @@ class MgCarDashboard extends HTMLElement {
     // Handy (Karte bis 600 px breit): Cockpit-Ansicht – Auto und Laden in einer Kachel, Lademanagement darunter, der Rest als Zeilen
     const mob = this.clientWidth > 0 && this.clientWidth <= 600;
     if (mob !== !!this._mob) {
-      this._mob = mob; wrap.classList.toggle("mob", mob);
+      this._mob = mob; wrap.classList.toggle("mob", mob); this._showPage();
       const car = this.shadowRoot.getElementById("car"); if (car) car._html = null;
       if (this._hass && this._built) Promise.resolve().then(() => this._update(true));
     }
@@ -3259,6 +3287,13 @@ class MgCarDashboard extends HTMLElement {
           : [sr.getElementById("lease"), sr.getElementById("usage")].find((x) => x && !x.hidden);
         box?.scrollIntoView({ block: "nearest", behavior: "smooth" });
       });
+      return;
+    }
+    if (act === "kmrow") {   // Handy: Zeile auf „Laden & Kosten“
+      const k = el.dataset.k;
+      this._kmx = this._kmx === k ? null : k;
+      this._render_cost();
+      if (this._kmx) requestAnimationFrame(() => this.shadowRoot.getElementById(k)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
       return;
     }
     if (act === "mplanopen") { this._planOpen = true; this._render_mgmt(); return; }
@@ -3764,6 +3799,38 @@ const CAR_STYLE = `
 .mplanrow{display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;border-radius:14px;border:1px dashed rgba(247,183,51,.45);color:var(--gold);font-size:14px;text-align:left}
 .mplanrow ha-icon{--mdc-icon-size:19px;flex:none}.mplanrow b{font-weight:600}.mplanrow span{margin-left:auto;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wrap.mob #mgmt .mplan{margin-bottom:0}
+/* Handy: Seitenwahl ohne Einstellungen, drei gleich breite Tabs */
+.wrap.mob .pages [data-p="set"]{display:none}
+.wrap.mob .pages > .hsegs{display:flex}.wrap.mob .pages > .hsegs .hseg{flex:1 1 0;text-align:center;padding:7px 4px}
+.wrap.mob .kper{flex-wrap:wrap;gap:8px;justify-content:center}.wrap.mob .kper > .hsegs{width:100%}.wrap.mob .kper .hseg{flex:1 1 0;text-align:center}
+.wrap.mob .knav b{font-size:15px}
+/* Handy: Profil & Analyse */
+.wrap.mob #pprof:not([hidden]){display:flex;flex-direction:column;gap:10px}
+.wrap.mob #pmorrow{order:1}.wrap.mob #pweek{order:2}.wrap.mob #pana{order:3}.wrap.mob #pmisch{order:4}
+.pwk{display:flex;flex-direction:column;gap:4px}
+.pwr{display:grid;align-items:center;gap:6px;padding:7px 10px;border-radius:12px;background:var(--tile);border:1px solid var(--tileb);font-size:14px}
+.pwr.ph{background:none;border:0;padding:0 10px 2px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pwr b{display:flex;flex-direction:column;line-height:1.1;font-weight:700}
+.pwr b em{font-style:normal;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.pwr span{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pwr.ph span{font-weight:600}
+.pwr span small{font-size:11px;color:var(--muted);font-weight:500;margin-left:2px}
+.pwr .ev{color:var(--cyan)}.pwr .hs{color:#a78bfa}.pwr .dp{color:var(--gold)}
+.pwr.tm{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.08)}.pwr.tm b em{color:var(--green)}
+.pwr.td{border-color:rgba(255,255,255,.18)}
+@container (max-width:370px){.pwr{font-size:13px;gap:4px;padding:7px 8px}.pwr span small{font-size:10px;margin-left:1px}}
+.wrap.mob .ptiles{gap:8px}.wrap.mob .ptile{padding:10px 12px;border-radius:16px}.wrap.mob .ptile b{font-size:21px}
+.wrap.mob .pstats.three .pst span{font-size:9.5px;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrap.mob .pstats.three{gap:6px}.wrap.mob .pstats.three .pst{padding-left:9px;padding-right:9px;min-width:0}
+/* Handy: Laden & Kosten */
+.wrap.mob #pcost:not([hidden]){display:flex;flex-direction:column;gap:10px;overflow:visible}
+.wrap.mob #pcost .col{display:contents}
+.wrap.mob #kgel{order:1}.wrap.mob #klist{order:2}.wrap.mob #kauf{order:4}.wrap.mob #kcmp{order:6}
+.wrap.mob #kmrows{display:contents}
+.wrap.mob:not([data-kmx="kauf"]) #kauf,.wrap.mob:not([data-kmx="kcmp"]) #kcmp{display:none!important}
+.wrap.mob .kchart{height:120px}
+.mrow .kd{display:inline-block;width:8px;height:8px;border-radius:2px;margin:0 4px 1px 6px}
+.wrap.mob .kkp{gap:6px}
 @container (max-width:370px){.mtop{grid-template-columns:100px minmax(0,1fr);gap:10px}.mring,.mring svg{width:100px;height:100px}.mring b{font-size:31px}.mkv{font-size:11.5px;gap:4px 6px}.ml1 b{font-size:25px}}
 .wrap.carpage .grid{grid-template-columns:1fr 1.15fr 1.15fr}
 #hist{display:flex;flex-direction:column;flex:none!important}
