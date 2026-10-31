@@ -15,6 +15,15 @@ normalen Karte und ändert an dieser nichts. Auf dem Desktop sieht sie aus wie d
 - **Fahrtenbuch, Verlauf, Leasing/Nutzung, Kennzahlen** als Zeilen mit dem wichtigsten Wert.
   Fahrtenbuch öffnet „Alle Fahrten“, die anderen klappen beim Antippen auf.
 
+- **Profil & Analyse:** „Morgen“ steht oben, die Woche ist eine kompakte Tabelle mit einer Zeile je Tag
+  (Auto-km, Hausverbrauch, Steckzeit, Abfahrt; heute und morgen markiert). Analyse und Netz-Zuschuss
+  sind kompakter.
+- **Laden & Kosten:** Zeitraum-Auswahl über die volle Breite, Diagramm und Ladungsliste kompakter.
+  Aufschlüsselung und Vergleich Verbrenner sind Zeilen mit Kurzwert (kWh je Quelle bzw. Ersparnis)
+  und klappen beim Antippen auf.
+- **Einstellungen** gibt es auf dem Handy nicht – der Tab ist ausgeblendet, die drei übrigen Tabs
+  passen ohne Scrollen nebeneinander.
+
 ## Einbinden (von Hand)
 
 1. `mg-car-dashboard-beta.js` nach `/config/www/glow-dashboard/` kopieren.

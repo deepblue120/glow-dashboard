@@ -272,3 +272,93 @@ R = [
 ]
 R.append(('    const stats = (c.stats || []).map((k) => {', '    return (c.stats || []).map((k) => {'))
 EN = {"Leistung": "Power", "Kennzahlen": "Statistics", "Ladeplan setzen": "Set charge plan", "Ziel und Uhrzeit wählen": "choose target and time"}
+
+# ===================== Handy: weitere Seiten (beta4) =====================
+R += [
+# Einstellungen auf dem Handy ausblenden; Seite neu zuordnen, wenn die Ansicht wechselt
+('''      this._mob = mob; wrap.classList.toggle("mob", mob);''', '''      this._mob = mob; wrap.classList.toggle("mob", mob); this._showPage();'''),
+('''  _showPage() {
+    const p = this._subPage(), sr = this.shadowRoot;''', '''  _showPage() {
+    if (this._mob && this._subPage() === "set") this._pg = "main";   // Handy: ohne Einstellungen
+    const p = this._subPage(), sr = this.shadowRoot;'''),
+# Profil: Woche als Zeilen
+('''    const days = PWD.map(([k, lbl], i) => {
+      const cls = i === tomorrow ? "tm" : i === today ? "td" : "";''', '''    if (this._mob) {   // Handy: eine Zeile je Tag
+      const cols = [[T("Auto"), (i) => `${hasKm ? this._roundKm(ev[i]) : de(ev[i], 1)}<small>${hasKm ? "km" : "kWh"}</small>`, "ev"],
+        showHs && [T("Haus"), (i) => (hs[i] == null ? "–" : `${de(hs[i], 1)}<small>kWh</small>`), "hs"],
+        pl.some((x) => x != null) && [T("Steckt"), (i) => (pl[i] == null ? "–" : `${de(pl[i], pl[i] >= 10 ? 0 : 1)}<small>h</small>`), "pl"],
+        Dp && [T("Abfahrt"), (i) => esc(dep(Dp[PWD[i][0]])), "dp"]].filter(Boolean);
+      const g = `style="grid-template-columns:52px repeat(${cols.length},minmax(0,1fr))"`;
+      el.innerHTML = head + `<div class="pwk"><div class="pwr ph" ${g}><span></span>${cols.map(([l]) => `<span>${l}</span>`).join("")}</div>`
+        + PWD.map(([, lbl], i) => `<div class="pwr ${i === tomorrow ? "tm" : i === today ? "td" : ""}" ${g}><b>${lbl}${i === tomorrow ? `<em>${T("morgen")}</em>` : i === today ? `<em>${T("heute")}</em>` : ""}</b>${cols.map(([, f, c]) => `<span class="${c}">${f(i)}</span>`).join("")}</div>`).join("") + `</div>`;
+      return;
+    }
+    const days = PWD.map(([k, lbl], i) => {
+      const cls = i === tomorrow ? "tm" : i === today ? "td" : "";'''),
+# Kosten: Aufschlüsselung und Vergleich als aufklappbare Zeilen
+('<div class="col"><section class="panel" id="kauf"></section><section class="panel" id="kcmp"></section></div>', '<div class="col"><section class="panel" id="kauf"></section><section class="panel" id="kcmp"></section><div class="mrows" id="kmrows"></div></div>'),
+('''  _render_cost() {''', '''  _render_cost() { this._kSum = null; this._render_cost_(); this._render_kmrows(); }
+  /* Handy: Aufschlüsselung und Vergleich Verbrenner als Zeilen mit Kurzwert, Antippen klappt auf */
+  _render_kmrows() {
+    const el = this.shadowRoot.getElementById("kmrows"), wrap = this.shadowRoot.querySelector(".wrap");
+    if (!el || !wrap) return;
+    if (!this._mob) { if (el._html) { el.innerHTML = ""; el._html = ""; } delete wrap.dataset.kmx; return; }
+    const mx = this._kmx || "", K = this._kSum || {};
+    if (mx) wrap.dataset.kmx = mx; else delete wrap.dataset.kmx;
+    const row = (k, ord, ic, lbl, val) => `<button class="mrow${mx === k ? " open" : ""}" style="order:${ord}" data-act="kmrow" data-k="${k}">${icon(ic)}<b>${lbl}</b><span>${val}</span>${icon(mx === k ? "mdi:chevron-up" : "mdi:chevron-down", "mrc")}</button>`;
+    // Kurzwert mit den Farben der Legende: Heim PV, Heim Netz, Fremd (kWh)
+    const auf = K.pv != null ? [`<i class="kd kpv"></i>${de(K.pv, 0)}`, `<i class="kd kgr"></i>${de(K.gr, 0)}`, K.fr > 0.05 && `<i class="kd kdc"></i>${de(K.fr, 0)}`].filter(Boolean).join(" ") + " kWh" : "";
+    const cmp = K.saved != null ? `<em style="color:${K.saved >= 0 ? "var(--green)" : "var(--orange)"}">${K.saved >= 0 ? T("Gespart") : T("Mehrkosten")} ${de(Math.abs(K.saved), 2)} €</em>` : "–";
+    const html = row("kauf", 3, "mdi:chart-donut", T("Aufschlüsselung"), auf) + row("kcmp", 5, "mdi:gas-station-outline", T("Vergleich Verbrenner"), cmp);
+    if (el._html !== html) { el.innerHTML = html; el._html = html; }
+  }
+  _render_cost_() {'''),
+('''    const cp = this._cpGet(), R = this._cpRange(), S = this._cpSum(R.a, R.b);''', '''    const cp = this._cpGet(), R = this._cpRange(), S = this._cpSum(R.a, R.b);
+    this._kSum = { pv: S.pv[0], gr: S.gr[0], fr: S.ac[0] + S.dc[0], saved: null };   // für die Zeilen (Handy)'''),
+('''    const vC = S.km * rate, saved = vC - S.total, mxc = Math.max(0.01, vC, S.total);''', '''    const vC = S.km * rate, saved = vC - S.total, mxc = Math.max(0.01, vC, S.total);
+    this._kSum.saved = saved;'''),
+('''    let h = narrow ? Math.round(window.innerHeight * 0.6) :''', '''    let h = narrow ? Math.round(window.innerHeight * (this._mob ? 0.45 : 0.6)) :'''),
+('''    if (act === "mplanopen") {''', '''    if (act === "kmrow") {   // Handy: Zeile auf „Laden & Kosten“
+      const k = el.dataset.k;
+      this._kmx = this._kmx === k ? null : k;
+      this._render_cost();
+      if (this._kmx) requestAnimationFrame(() => this.shadowRoot.getElementById(k)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+      return;
+    }
+    if (act === "mplanopen") {'''),
+# CSS
+('''.wrap.mob #mgmt .mplan{margin-bottom:0}''', '''.wrap.mob #mgmt .mplan{margin-bottom:0}
+/* Handy: Seitenwahl ohne Einstellungen, drei gleich breite Tabs */
+.wrap.mob .pages [data-p="set"]{display:none}
+.wrap.mob .pages > .hsegs{display:flex}.wrap.mob .pages > .hsegs .hseg{flex:1 1 0;text-align:center;padding:7px 4px}
+.wrap.mob .kper{flex-wrap:wrap;gap:8px;justify-content:center}.wrap.mob .kper > .hsegs{width:100%}.wrap.mob .kper .hseg{flex:1 1 0;text-align:center}
+.wrap.mob .knav b{font-size:15px}
+/* Handy: Profil & Analyse */
+.wrap.mob #pprof:not([hidden]){display:flex;flex-direction:column;gap:10px}
+.wrap.mob #pmorrow{order:1}.wrap.mob #pweek{order:2}.wrap.mob #pana{order:3}.wrap.mob #pmisch{order:4}
+.pwk{display:flex;flex-direction:column;gap:4px}
+.pwr{display:grid;align-items:center;gap:6px;padding:7px 10px;border-radius:12px;background:var(--tile);border:1px solid var(--tileb);font-size:14px}
+.pwr.ph{background:none;border:0;padding:0 10px 2px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pwr b{display:flex;flex-direction:column;line-height:1.1;font-weight:700}
+.pwr b em{font-style:normal;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.pwr span{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pwr.ph span{font-weight:600}
+.pwr span small{font-size:11px;color:var(--muted);font-weight:500;margin-left:2px}
+.pwr .ev{color:var(--cyan)}.pwr .hs{color:#a78bfa}.pwr .dp{color:var(--gold)}
+.pwr.tm{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.08)}.pwr.tm b em{color:var(--green)}
+.pwr.td{border-color:rgba(255,255,255,.18)}
+@container (max-width:370px){.pwr{font-size:13px;gap:4px;padding:7px 8px}.pwr span small{font-size:10px;margin-left:1px}}
+.wrap.mob .ptiles{gap:8px}.wrap.mob .ptile{padding:10px 12px;border-radius:16px}.wrap.mob .ptile b{font-size:21px}
+.wrap.mob .pstats.three .pst span{font-size:9.5px;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrap.mob .pstats.three{gap:6px}.wrap.mob .pstats.three .pst{padding-left:9px;padding-right:9px;min-width:0}
+/* Handy: Laden & Kosten */
+.wrap.mob #pcost:not([hidden]){display:flex;flex-direction:column;gap:10px;overflow:visible}
+.wrap.mob #pcost .col{display:contents}
+.wrap.mob #kgel{order:1}.wrap.mob #klist{order:2}.wrap.mob #kauf{order:4}.wrap.mob #kcmp{order:6}
+.wrap.mob #kmrows{display:contents}
+.wrap.mob:not([data-kmx="kauf"]) #kauf,.wrap.mob:not([data-kmx="kcmp"]) #kcmp{display:none!important}
+.wrap.mob .kchart{height:120px}
+.mrow .kd{display:inline-block;width:8px;height:8px;border-radius:2px;margin:0 4px 1px 6px}
+.wrap.mob .kkp{gap:6px}'''),
+]
+EN.update({"Aufschlüsselung": "Breakdown"})
