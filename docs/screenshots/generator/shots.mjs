@@ -11,13 +11,16 @@ const shot=async (name,q,{w=1600,h=900,dsf=1,lang="de",act}={})=>{
   const pg=await b.newPage({viewport:{width:w,height:h},deviceScaleFactor:dsf,locale:lang==="de"?"de-DE":"en-US"});
   pg.on("pageerror",e=>errs.push(name+": "+e.message)); pg.on("console",m=>{if(m.type()==="error")errs.push(name+": "+m.text())});
   await pg.goto(`http://localhost:8802/docs/screenshots/generator/shots.html?lang=${lang}&${q}`); await pg.waitForTimeout(2500);
+  // die Karte öffnet immer die Übersicht – andere Seiten antippen
+  const P = new URLSearchParams(q).get("p");
+  if (P && P !== "main") { await pg.evaluate((P) => window.__el.shadowRoot.querySelector(`[data-act="page"][data-p="${P}"]`).click(), P); await pg.waitForTimeout(1500); }
   if (act) { await pg.evaluate(act); await pg.waitForTimeout(700); }
   await pg.screenshot({path:`${OUT}/${name}.png`}); await b.close();
 };
 const sr="window.__el.shadowRoot";
 await shot("uebersicht","p=main&hh=168");
 await shot("profil-analyse","p=prof&chg=0");
-await shot("laden-kosten","p=cost&cp=month");
+await shot("laden-kosten","p=cost&cp=month",{act:`${sr}.querySelector('[data-act="cper"][data-v="week"]').click()`});
 await shot("einstellungen","p=set&chg=0");
 await shot("dlg-ladungen","p=main&hh=168",{act:`${sr}.querySelector('[data-act="charges"]').click()`});
 await shot("dlg-fahrten","p=main&hh=168",{act:`${sr}.querySelector('#trips [data-act="trips"]').click()`});
@@ -25,6 +28,7 @@ await shot("dlg-autarkie","p=prof&chg=0",{act:`window.__el._openAna("aut")`});
 await shot("dlg-bestaetigen","p=main&hh=168&chg=0&pend=1",{act:`${sr}.querySelector('.cpend').click()`});
 await shot("menu-lademodus","p=main&hh=168",{act:`${sr}.querySelector('[data-act="evamanmenu"]').click()`});
 await shot("handy","p=main&hh=24",{w:430,h:932,dsf:2});
-await shot("handy-kosten","p=cost&cp=month",{w:430,h:932,dsf:2});
+await shot("handy-kosten","p=cost&cp=month",{w:430,h:932,dsf:2,act:`${sr}.querySelector('[data-act="cper"][data-v="week"]').click()`});
+await shot("handy-profil","p=prof&chg=0",{w:430,h:932,dsf:2});
 await shot("overview-en","p=main&hh=168",{lang:"en"});
 console.log(errs.length?errs:"ok"); srv.close();
