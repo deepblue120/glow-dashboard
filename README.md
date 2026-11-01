@@ -44,10 +44,21 @@ Wartung mit Countdown bis zum nächsten Termin, Ladekarten, Urlaubsmodus, Fahrze
 
 ### Handy
 
+Auf dem Handy (Karte bis 600 px breit) zeigt die Karte eine eigene, kompakte Ansicht:
+
+- **Übersicht:** Auto und Laden in einer Cockpit-Kachel (Ladestand als Ring, laufende bzw. letzte Ladung daneben),
+  direkt darunter das Lademanagement. Der Ladeplan klappt beim Antippen auf. Fahrtenbuch, Verlauf, Leasing/Nutzung
+  und Kennzahlen sind Zeilen mit dem wichtigsten Wert – antippen öffnet bzw. klappt direkt darunter auf.
+- **Profil & Analyse:** „Morgen“ zuerst, die Woche als Tabelle mit einer Zeile je Tag.
+- **Laden & Kosten:** Aufschlüsselung und Vergleich Verbrenner als aufklappbare Zeilen.
+- **Einstellungen** gibt es nur auf dem Desktop.
+
 <p>
-  <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/handy.png" alt="Übersicht auf dem Handy" width="300">
+  <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/handy.png" alt="Übersicht auf dem Handy" width="260">
   &nbsp;
-  <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/handy-kosten.png" alt="Laden & Kosten auf dem Handy" width="300">
+  <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/handy-profil.png" alt="Profil & Analyse auf dem Handy" width="260">
+  &nbsp;
+  <img src="https://raw.githubusercontent.com/deepblue120/glow-dashboard/main/docs/screenshots/handy-kosten.png" alt="Laden & Kosten auf dem Handy" width="260">
 </p>
 
 Die Bilder erstellt `node docs/screenshots/generator/shots.mjs` (Playwright mit Chromium) neu.
@@ -71,7 +82,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=59`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=60`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -246,6 +257,7 @@ car:
 | 3.5.31 | Analyse rechnet Autarkie, Ladeorte, Kosten, AC/DC und Anbieter aus allen Ladungen (evcc-Ladelogbuch + Fremdladungen) – dieselben Werte wie „Laden & Kosten“ |
 | 3.5.32 | Screenshots in der Beschreibung, englische Kachel „Mode“ statt „Charging mode“ |
 | 3.5.33 | Profil & Analyse: Kachel „Ladewirkungsgrad“ (gemessen bzw. Startwert, Einzelwerte der letzten Ladungen) |
+| 3.5.36 | Handy-Ansicht: Cockpit-Kachel (Auto + Laden), kompaktes Lademanagement, Zeilen zum Aufklappen; Profil & Analyse sowie Laden & Kosten für das Handy; Einstellungen nur auf dem Desktop |
 | 3.5.27 | Lademanagement: PV-Anteil wieder orange, Puffer grün |
 | 3.5.26 | Übersicht ohne Scrollbalken rechts, PV-Anteil/Puffer mit Auswahl wie Ladeziel, Laden & Kosten bündig |
 | 3.5.25 | Lademanagement: Automatik · Manuell · Vollladung / Ladeziel · PV-Anteil · Puffer, „Plan setzen“ mittig |
