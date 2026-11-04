@@ -82,7 +82,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=62`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=63`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -260,6 +260,7 @@ car:
 | 3.5.36 | Handy-Ansicht: Cockpit-Kachel (Auto + Laden), kompaktes Lademanagement, Zeilen zum Aufklappen; Profil & Analyse sowie Laden & Kosten für das Handy; Einstellungen nur auf dem Desktop |
 | 3.5.37 | iPhone: Handy-Ansicht hält wieder Abstand zur Statusleiste (Uhr, Kamera) |
 | 3.5.38 | iPhone: Höhe der Statusleiste wird gemessen (Abstand auch, wenn die Karte nicht ganz oben beginnt), auf dem Handy deckt eine Fläche Uhr und Kamera ab, damit beim Scrollen nichts darunter durchläuft |
+| 3.5.39 | iPhone (HA-App): Höhe der Statusleiste aus `--safe-area-inset-top` von Home Assistant statt `env()`, das in der App 0 liefert |
 | 3.5.27 | Lademanagement: PV-Anteil wieder orange, Puffer grün |
 | 3.5.26 | Übersicht ohne Scrollbalken rechts, PV-Anteil/Puffer mit Auswahl wie Ladeziel, Laden & Kosten bündig |
 | 3.5.25 | Lademanagement: Automatik · Manuell · Vollladung / Ladeziel · PV-Anteil · Puffer, „Plan setzen“ mittig |
