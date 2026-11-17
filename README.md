@@ -7,6 +7,7 @@ Custom Lovelace cards for Home Assistant — dark, modern, card-based.
 | Karte | Beschreibung |
 |-------|-------------|
 | `custom:mg-car-dashboard` | Auto-Seite mit evcc, ev_assistant, Fahrtenbuch |
+| `custom:tariffy-glow` | Verträge aus [Tariffy](https://github.com/weskona/tariffy): Übersicht und Vertragsliste (siehe unten) |
 
 ## Screenshots
 
@@ -307,3 +308,22 @@ Texte aus ev_assistant (z. B. Kategorien im Ereignisprotokoll, Modusnamen der Wa
 
 Die Schrift [Outfit](https://github.com/Outfitio/Outfit-Fonts) (SIL Open Font License 1.1) ist in `mg-car-dashboard.js`
 eingebettet (lateinischer Zeichensatz, Variable Font). Lizenztext: [`dist/OFL-Outfit.txt`](dist/OFL-Outfit.txt). Die Karte lädt nichts von Google oder anderen Servern nach.
+
+## Tariffy-Karte (`tariffy-glow`)
+
+Zeigt die Verträge der Integration [Tariffy](https://github.com/weskona/tariffy) im Glow-Look. Die Karte liest die Daten
+über den Websocket-Befehl `tariffy/subscribe` und ändert nichts an Tariffy. Sie ist rein lesend.
+
+- **Übersicht:** Fixkosten pro Monat (mit Umschalter „Ohne Kredit“), „Braucht dich“ (Nachzahlung, Kündigungsfrist, Tarifwechsel), nächste Termine und je Vertrag eine Kachel, nach Dringlichkeit sortiert und filterbar.
+- **Verträge:** eine Zeile je Vertrag, nach Gruppen sortiert. Antippen klappt Vertrag, Preise, Verbrauch und Einmalposten auf.
+- Unter 600 px Breite stellt sich die Karte auf eine Spalte um.
+
+```yaml
+type: custom:tariffy-glow
+# title: Tariffy       # optional
+# show_loans: false    # Kredite ausblenden
+```
+
+Die Datei liegt als `dist/tariffy-glow.js` im Repository. HACS lädt nur `mg-car-dashboard.js`, deshalb die Datei von Hand nach
+`/config/www/glow-dashboard/` kopieren und als Ressource (Typ **JavaScript-Modul**) eintragen:
+`/local/glow-dashboard/tariffy-glow.js?v=1`
