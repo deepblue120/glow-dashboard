@@ -52,6 +52,14 @@ for (let d = 42; d >= 0; d--) {
     odo = Math.round((odo + km) * 10) / 10;
   }
 }
+if (trips.length > 2) trips[trips.length - 2].sonderfahrt = true;
+/* Urlaubskalender: Tage als Menge, Zeiträume daraus zusammengefasst (wie ev_assistant) */
+const isoD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const uDays = new Set();
+const uAdd = (von, bis, on) => { for (let d = new Date(von + "T12:00"); isoD(d) <= (bis || von); d.setDate(d.getDate() + 1)) on ? uDays.add(isoD(d)) : uDays.delete(isoD(d)); };
+{ const b = new Date(NOW); b.setDate(b.getDate() + 9); const e = new Date(b); e.setDate(e.getDate() + 6); uAdd(isoD(b), isoD(e), true);
+  const p = new Date(NOW); p.setDate(p.getDate() - 20); const q = new Date(p); q.setDate(q.getDate() + 2); uAdd(isoD(p), isoD(q), true); }
+const uRanges = () => { const a = [...uDays].sort(), r = []; for (const d of a) { const l = r[r.length - 1], n = l && new Date(l.bis + "T12:00"); if (n) n.setDate(n.getDate() + 1); if (l && isoD(n) === d) l.bis = d; else r.push({ von: d, bis: d }); } return r; };
 
 /* ---------- Ladeleistung und Ladestand je Stunde (Verlauf) ---------- */
 const sess = sessions.map((s) => ({ a: Date.parse(s.created), b: s.finished ? Date.parse(s.finished) : NOW, kw: s.chargedEnergy / (s.chargeDuration / 3600e9), kwh: s.chargedEnergy }));
@@ -138,8 +146,8 @@ const log = [[0.2, "modus", "evcc-Modus auf pv gesetzt (Akku reicht bis morgen, 
   .map(([h, kategorie, text]) => ({ ts: (NOW - h * H) / 1000, kategorie, text }));
 
 const hass = { states, entities, devices: {}, language: LANG, locale: { language: LANG, number_format: "language" },
-  services: { ev_assistant: { set_usage_profile_buffer_km: {}, set_evcc_realtime_override_min_solar_share: {}, set_evcc_charge_plan_range_km: {}, add_maintenance: {} } },
-  callService: async () => {},
+  services: { ev_assistant: { set_usage_profile_buffer_km: {}, set_evcc_realtime_override_min_solar_share: {}, set_evcc_charge_plan_range_km: {}, add_maintenance: {}, sonderfahrt: {}, set_urlaub_zeitraum: {} } },
+  callService: async (dom, svc, data) => { window.__calls = [...(window.__calls || []), [svc, data]]; if (svc === "set_urlaub_zeitraum") uAdd(data.von, data.bis, data.aktiv); if (svc === "sonderfahrt") { const t = trips.find((x) => x.erfasst_ts === data.erfasst_ts); if (t) t.sonderfahrt = data.aktiv; } },
   callApi: async (m, url) => { const u = new URL("http://x/" + url), t0 = Date.parse(decodeURIComponent(url.split("/")[2].split("?")[0])), t1 = Date.parse(u.searchParams.get("end_time")) || NOW;
     return (u.searchParams.get("filter_entity_id") || "").split(",").filter((id) => ["sensor.mg4_soc", "sensor.wallbox_power"].includes(id)).map((id) => hist(id, t0, t1)); },
   callWS: async (m) => {
@@ -149,6 +157,7 @@ const hass = { states, entities, devices: {}, language: LANG, locale: { language
     if (m.type === "ev_assistant/trips") return { trips };
     if (m.type === "ev_assistant/evcc_sessions") return { sessions };
     if (m.type === "ev_assistant/charges") return { charges: ext };
+    if (m.type === "ev_assistant/urlaub") return { zeitraeume: uRanges(), schalter_konfiguriert: true, schalter_aktiv: Q.get("ua") === "1", aktiv_heute: Q.get("ua") === "1" };
     return {};
   } };
 try { localStorage.setItem("mg-car-page", PAGE); localStorage.setItem("mg-car-hist-hours", Q.get("hh") || "24"); localStorage.setItem("mg-car-cost-period", Q.get("cp") || "month"); localStorage.setItem("mg-car-stat-view", Q.get("sv") || "lease"); } catch (e) {}
