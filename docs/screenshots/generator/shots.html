@@ -59,6 +59,10 @@ const uDays = new Set();
 const uAdd = (von, bis, on) => { for (let d = new Date(von + "T12:00"); isoD(d) <= (bis || von); d.setDate(d.getDate() + 1)) on ? uDays.add(isoD(d)) : uDays.delete(isoD(d)); };
 { const b = new Date(NOW); b.setDate(b.getDate() + 9); const e = new Date(b); e.setDate(e.getDate() + 6); uAdd(isoD(b), isoD(e), true);
   const p = new Date(NOW); p.setDate(p.getDate() - 20); const q = new Date(p); q.setDate(q.getDate() + 2); uAdd(isoD(p), isoD(q), true); }
+const kTerm = [[-12, "08:00", -10, "00:00"], [3, "14:00", 6, "10:00"], [21, "00:00", 24, "00:00"]].map(([a, ta, b, tb]) => {
+  const d1 = new Date(NOW), d2 = new Date(NOW); d1.setDate(d1.getDate() + a); d2.setDate(d2.getDate() + b);
+  const last = new Date(d2); if (tb === "00:00") last.setDate(last.getDate() - 1);
+  return { start: `${isoD(d1)}T${ta}:00+01:00`, ende: `${isoD(d2)}T${tb}:00+01:00`, von: isoD(d1), bis: isoD(last) }; });
 const uRanges = () => { const a = [...uDays].sort(), r = []; for (const d of a) { const l = r[r.length - 1], n = l && new Date(l.bis + "T12:00"); if (n) n.setDate(n.getDate() + 1); if (l && isoD(n) === d) l.bis = d; else r.push({ von: d, bis: d }); } return r; };
 
 /* ---------- Ladeleistung und Ladestand je Stunde (Verlauf) ---------- */
@@ -157,7 +161,7 @@ const hass = { states, entities, devices: {}, language: LANG, locale: { language
     if (m.type === "ev_assistant/trips") return { trips };
     if (m.type === "ev_assistant/evcc_sessions") return { sessions };
     if (m.type === "ev_assistant/charges") return { charges: ext };
-    if (m.type === "ev_assistant/urlaub") return { zeitraeume: uRanges(), schalter_konfiguriert: true, schalter_aktiv: Q.get("ua") === "1", aktiv_heute: Q.get("ua") === "1" };
+    if (m.type === "ev_assistant/urlaub") return { zeitraeume: uRanges(), schalter_konfiguriert: true, schalter_aktiv: Q.get("ua") === "1", aktiv_heute: Q.get("ua") === "1", kalender_konfiguriert: Q.get("uk") !== "0", kalender_termine: Q.get("uk") !== "0" ? kTerm : [] };
     return {};
   } };
 try { localStorage.setItem("mg-car-page", PAGE); localStorage.setItem("mg-car-hist-hours", Q.get("hh") || "24"); localStorage.setItem("mg-car-cost-period", Q.get("cp") || "month"); localStorage.setItem("mg-car-stat-view", Q.get("sv") || "lease"); } catch (e) {}
