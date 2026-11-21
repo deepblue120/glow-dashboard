@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=69  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=70  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "4.0.9";
+const VERSION = "4.0.10";
 // merkt sich den letzten Wechsel der Adresse (auch wenn die Karte dabei aus- und neu eingehängt wird, z. B. durch Detailfenster)
 const NAV = (window.__glowCarNav = window.__glowCarNav || (() => {
   const n = { cur: location.pathname, t: 0 };
@@ -3238,7 +3238,7 @@ class MgCarDashboard extends HTMLElement {
       <div class="hd">${this._carTitle(name)}<span class="lbl ${charging ? "chg" : ""}">${charging ? `${icon("mdi:lightning-bolt")} ` : ""}${esc(status)}</span>
         ${pendBtn}</div>
       <div class="carbody" data-act="cardetail">
-        <div><div class="soc">${hasSoc ? Math.round(soc) : "–"}<sup>%</sup></div>
+        <div><div class="soc">${hasSoc ? Math.round(soc) : "–"}<sup>%</sup>${this._tgtSoc()}</div>
           <div class="range">${range ? `${Math.round(this._num(c.range))} km` : rEst ? `${rEst.v} km` : ""}${range && rEst ? `<small> · ${T("real")} ≈ ${rEst.v} km</small>` : ""}</div></div>
         ${img ? `<img class="carimg" src="${esc(img)}" alt="">` : ""}
       </div>
@@ -3287,6 +3287,12 @@ class MgCarDashboard extends HTMLElement {
   }
 
   /* Handy: Cockpit-Kachel – Ladestand als Ring, daneben die laufende bzw. letzte Ladung (Werte aus _render_live) */
+  /* Ziel-SoC von ev_assistant (evcc_modus_steuerung, Attribut target_soc) klein neben dem Ladestand */
+  _tgtSoc() {
+    const v = Number(this._ea("evcc_mode_control")?.attributes?.target_soc);
+    if (!Number.isFinite(v) || v <= 0 || v > 100) return "";
+    return `<span class="soct" title="${T("Ziel-SoC")}">${icon("mdi:arrow-right")}${Math.round(v)}<sup>%</sup></span>`;
+  }
   _render_car_mob() {
     const img = this._carImage(), c = this._config.car, ev = c.evcc || {}, E = this._eva(), V = this._lv || {};
     const hasSoc = !!this._st(c.soc), soc = Math.max(0, Math.min(100, this._num(c.soc)));
@@ -3845,8 +3851,10 @@ ha-icon{--mdc-icon-size:22px;display:inline-flex}
 @media (max-width:760px){.dlg{max-width:100vw;max-height:100vh;height:100%;margin:0}.dpan{height:100vh;height:100dvh;max-height:100vh;max-height:100dvh;border-radius:0;padding-top:var(--safe-area-inset-top,env(safe-area-inset-top,0px));padding-bottom:var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))}}
 .panel.car{display:flex;flex-direction:column}
 .carbody{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.soc{font-size:64px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.soc{font-size:64px;font-weight:800;line-height:1;letter-spacing:-.02em;white-space:nowrap}
 .soc sup{font-size:24px;font-weight:600;vertical-align:top;margin-left:2px}
+.soct{display:inline-flex;align-items:center;margin-left:10px;font-size:28px;font-weight:700;color:var(--muted);letter-spacing:0;vertical-align:baseline}
+.soct ha-icon{--mdc-icon-size:22px;margin-right:4px}.soc .soct sup{font-size:13px;margin-left:1px;vertical-align:top}
 .range{font-size:17px;color:rgba(243,245,249,.8);margin-top:6px}
 .carimg{max-width:48%;max-height:96px;object-fit:contain;filter:drop-shadow(0 8px 14px rgba(0,0,0,.5))}
 .bar{height:10px;border-radius:6px;background:rgba(255,255,255,.07);margin:18px 0 16px;overflow:hidden}
@@ -5043,6 +5051,7 @@ const I18N = {
     "Keine Antwort von ev_assistant – Ladeplan vermutlich nicht gesetzt.": "No response from ev_assistant – charge plan probably not set.",
     "Ladeplan konnte nicht gesetzt werden:": "Charge plan could not be set:",
     "Sonderfahrt": "Special trip",
+    "Ziel-SoC": "Target SoC",
     "ab {t}": "from {t}",
     "bis {t}": "until {t}",
     "aus Kalender": "from calendar",

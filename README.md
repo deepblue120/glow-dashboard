@@ -82,7 +82,7 @@ HACS legt die Datei unter `/config/www/community/glow-dashboard/` ab und trägt 
 
 1. `dist/mg-car-dashboard.js` nach `/config/www/glow-dashboard/` kopieren.
 2. **Einstellungen → Dashboards → ⋮ → Ressourcen** → Eintrag hinzufügen (Typ: **JavaScript-Modul**):
-   `/local/glow-dashboard/mg-car-dashboard.js?v=69`
+   `/local/glow-dashboard/mg-car-dashboard.js?v=70`
    (die Zahl hinter `?v=` nach jedem Update erhöhen, damit der Browser die neue Datei lädt)
 
 ## Datenquellen
@@ -267,6 +267,7 @@ car:
 | 4.0.7 | Lademanagement: bei abgestecktem Auto „Lädt nach dem Anstecken mit voller Leistung“ statt „Lädt jetzt …“ (#59) |
 | 4.0.8 | Fahrtenbuch: Schalter „Sonderfahrt“ im Dialog „Fahrt bearbeiten“, Kennzeichen in der Liste (#61) · Einstellungen: Urlaubskalender mit Monatsansicht zum Setzen und Entfernen von Urlaubstagen (#62) |
 | 4.0.9 | Urlaubskalender: Termine aus dem Urlaubs-Kalender von ev_assistant werden schraffiert angezeigt (nur lesbar), bei Teiltagen mit Uhrzeit „ab/bis“, und in der Liste mit „aus Kalender“ aufgeführt (#64) |
+| 4.0.10 | Übersicht: Ziel-SoC aus ev_assistant (evcc_modus_steuerung, `target_soc`) klein mit Pfeil neben dem Ladestand |
 | 3.5.27 | Lademanagement: PV-Anteil wieder orange, Puffer grün |
 | 3.5.26 | Übersicht ohne Scrollbalken rechts, PV-Anteil/Puffer mit Auswahl wie Ladeziel, Laden & Kosten bündig |
 | 3.5.25 | Lademanagement: Automatik · Manuell · Vollladung / Ladeziel · PV-Anteil · Puffer, „Plan setzen“ mittig |
