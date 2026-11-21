@@ -1,12 +1,12 @@
 /*
  * mg-car-dashboard.js
  * Ablage:    /config/www/glow-dashboard/mg-car-dashboard.js
- * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=70  (Typ: JavaScript)
+ * Ressource: /local/glow-dashboard/mg-car-dashboard.js?v=71  (Typ: JavaScript)
  * YAML:      type: custom:mg-car-dashboard
  */
 
 window.customCards = window.customCards || [];
-const VERSION = "4.0.10";
+const VERSION = "4.0.11";
 // merkt sich den letzten Wechsel der Adresse (auch wenn die Karte dabei aus- und neu eingehängt wird, z. B. durch Detailfenster)
 const NAV = (window.__glowCarNav = window.__glowCarNav || (() => {
   const n = { cur: location.pathname, t: 0 };
@@ -3215,7 +3215,7 @@ class MgCarDashboard extends HTMLElement {
     const status = charging ? T("Lädt") : driving ? (c.status_on ? T(c.status_on) : T("Unterwegs")) : plugged ? T("Angesteckt") : (c.status_off ? T(c.status_off) : T("Geparkt"));
 
     // Markierungen im Balken: Ladeziel (evcc) und Mindest-SoC (immer laden bis …)
-    const lim = ev.limit_soc && this._st(ev.limit_soc) ? this._num(ev.limit_soc) : null;
+    const lim = this._limMark();
     const min = ev.min_soc && this._st(ev.min_soc) ? this._num(ev.min_soc) : null;
     const marks = [min != null && min > 0 && min < 100 ? `<i class="bm min" style="left:${min}%" title="${T("Mindestladung")} ${Math.round(min)} %"></i>` : "",
       lim != null && lim > 0 && lim < 100 ? `<i class="bm lim" style="left:${lim}%" title="${T("Ladeziel")} ${Math.round(lim)} %"></i>` : ""].join("");
@@ -3288,6 +3288,15 @@ class MgCarDashboard extends HTMLElement {
 
   /* Handy: Cockpit-Kachel – Ladestand als Ring, daneben die laufende bzw. letzte Ladung (Werte aus _render_live) */
   /* Ziel-SoC von ev_assistant (evcc_modus_steuerung, Attribut target_soc) klein neben dem Ladestand */
+  /* Weißer Strich (Ladeziel) im SoC-Balken/Ring: das Ziel, mit dem evcc wirklich lädt. Mit ev_assistant dessen target_soc
+     (geht an evcc), sonst das wirksame Ladeziel aus evcc (live), erst danach das Select des Ladepunkts – das bleibt beim
+     Ladeziel auf Fahrzeug-Ebene stehen und zeigte sonst einen veralteten Wert. */
+  _limMark() {
+    const t = Number(this._ea("evcc_mode_control")?.attributes?.target_soc); if (Number.isFinite(t) && t > 0) return t;
+    const eff = Number(this._live().limit_soc); if (Number.isFinite(eff) && eff > 0) return eff;
+    const ev = this._config.car.evcc || {};
+    return ev.limit_soc && this._st(ev.limit_soc) ? this._num(ev.limit_soc) : null;
+  }
   _tgtSoc() {
     const v = Number(this._ea("evcc_mode_control")?.attributes?.target_soc);
     if (!Number.isFinite(v) || v <= 0 || v > 100) return "";
@@ -3300,7 +3309,7 @@ class MgCarDashboard extends HTMLElement {
     const rEst = this._fmt(E.range_estimate, 0), range = this._st(c.range) ? `${Math.round(this._num(c.range))} km` : rEst ? `${rEst.v} km` : "";
     const name = c.name || this._evaPanel?.name || T("Auto");
     const status = charging ? T("Lädt") : driving ? (c.status_on ? T(c.status_on) : T("Unterwegs")) : plugged ? T("Angesteckt") : (c.status_off ? T(c.status_off) : T("Geparkt"));
-    const lim = ev.limit_soc && this._st(ev.limit_soc) ? this._num(ev.limit_soc) : null, min = ev.min_soc && this._st(ev.min_soc) ? this._num(ev.min_soc) : null;
+    const lim = this._limMark(), min = ev.min_soc && this._st(ev.min_soc) ? this._num(ev.min_soc) : null;
     // Ring: Ladestand, dazu Striche für Ladeziel (weiß) und Mindestladung (orange)
     const RR = 51, CC = 2 * Math.PI * RR, mark = (v, cls) => (v > 0 && v < 100 ? `<circle cx="59" cy="59" r="${RR}" class="${cls}" style="stroke-dasharray:2.5 ${CC};stroke-dashoffset:${-((v / 100) * CC) + 1.25}"/>` : "");
     const ring = `<button class="mring" data-act="cardetail"><svg viewBox="0 0 118 118"><circle cx="59" cy="59" r="${RR}" class="rbg"/><circle cx="59" cy="59" r="${RR}" class="rsoc${charging ? " chg" : ""}" style="stroke-dasharray:${((soc / 100) * CC).toFixed(1)} ${CC.toFixed(1)}"/>${mark(min, "rmin")}${mark(lim, "rlim")}</svg>
